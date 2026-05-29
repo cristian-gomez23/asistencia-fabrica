@@ -1,0 +1,4 @@
+npm create vite@latest asistencia-fabrica -- --template react
+cd asistencia-fabrica
+npm install
+npm install xlsx
