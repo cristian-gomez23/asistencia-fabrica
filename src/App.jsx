@@ -163,11 +163,13 @@ function calcRecord(rec, empCfg, specialDays) {
   // Horas extra
   let extra = null;
   if (!sinExtra) {
-    // Operarios: horas extra solo desde 06:00 am como mínimo
-    const entEfectiva = esOperario ? Math.max(entMin, OPERARIO_EXTRA_FROM) : entMin;
-    const adelanto    = Math.max(0, entRef - entEfectiva);
-    const extension   = Math.max(0, salMin - salRef);
-    const total       = adelanto + extension;
+    // Operarios: horas extra desde 06:00 am como mínimo
+    // Administrativos: horas extra desde su hora de entrada configurada (no antes)
+    const limiteEntrada = esOperario ? OPERARIO_EXTRA_FROM : entRef;
+    const entEfectiva   = Math.max(entMin, limiteEntrada);
+    const adelanto      = Math.max(0, entRef - entEfectiva); // siempre 0 con este límite
+    const extension     = Math.max(0, salMin - salRef);
+    const total         = adelanto + extension;
     if (total > 0) extra = total;
   }
   const demora      = Math.max(0, entMin - entRef);
