@@ -61,7 +61,7 @@ const SEED_EMPLOYEES = [
 function makeDefaultEmployees() {
   const map = {};
   for (const [no, nombre] of SEED_EMPLOYEES) {
-    map[no] = { empNo: no, nombre, depto: "pyg", entrada: "06:00", salida: "16:30", activo: true, autoDetected: false };
+    map[no] = { empNo: no, nombre, depto: "pyg", entrada: "06:00", salida: "16:30", activo: true, autoDetected: false, tipo: "operario" };
   }
   return map;
 }
@@ -130,30 +130,52 @@ function parseAnormalSheet(ws) {
   return records;
 }
 
+// Horas extra de operarios solo desde las 06:00
+const OPERARIO_EXTRA_FROM = 6 * 60; // 360 min
+
+// Colores por tipo
+const TIPO_CFG = {
+  operario:      { label:"Operario",      bg:"#edf5ff", color:"#1e5fa8", border:"#c3daff" },
+  administrativo:{ label:"Administrativo",bg:"#f0faf4", color:"#276749", border:"#c3e6cb" },
+};
+
 function calcRecord(rec, empCfg, specialDays) {
-  const cfg = empCfg || { entrada:"06:00", salida:"16:30" };
-  // Override horario by day type
-  const dayType  = specialDays?.[rec.fecha];
-  const diaSemana = new Date(rec.fecha+"T12:00:00").getDay(); // 0=dom, 6=sab
-  const esSabado  = diaSemana === 6;
-  const effectiveCfg = dayType?.tipo === "feriado"
+  const cfg = empCfg || { entrada:"06:00", salida:"16:30", tipo:"operario" };
+  const esOperario = (cfg.tipo || "operario") === "operario";
+  const dayType    = specialDays?.[rec.fecha];
+  const diaSemana  = new Date(rec.fecha+"T12:00:00").getDay();
+  const esSabado   = diaSemana === 6;
+  const esDomingo  = diaSemana === 0;
+  const esFeriado  = dayType?.tipo === "feriado";
+  // Operarios no acumulan horas extra en sábados, domingos ni feriados
+  const sinExtra   = esOperario && (esSabado || esDomingo || esFeriado);
+  const effectiveCfg = esFeriado
     ? { entrada: cfg.entrada, salida: "14:00" }
     : esSabado
     ? { entrada: cfg.entrada, salida: "13:00" }
     : cfg;
   if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra:null, demora:null, salTemprana:null };
-  const entMin=parseTimeVal(rec.entrada), salMin=parseTimeVal(rec.salida);
-  const entRef=parseTimeVal(effectiveCfg.entrada), salRef=parseTimeVal(effectiveCfg.salida);
-  const jornada    = salRef - entRef;
-  const adelanto   = Math.max(0, entRef - entMin);
-  const extension  = Math.max(0, salMin - salRef);
-  const extra      = adelanto + extension;
-  const demora     = Math.max(0, entMin - entRef);
-  const salTemprana= Math.max(0, salRef - salMin);
-  const entDentro  = Math.max(entMin, entRef);
-  const salDentro  = Math.min(salMin, salRef);
-  const trabajado  = Math.max(0, salDentro - entDentro);
-  return { trabajado, jornada, extra: extra > 0 ? extra : null, demora, salTemprana };
+  const entMin = parseTimeVal(rec.entrada);
+  const salMin = parseTimeVal(rec.salida);
+  const entRef = parseTimeVal(effectiveCfg.entrada);
+  const salRef = parseTimeVal(effectiveCfg.salida);
+  const jornada = salRef - entRef;
+  // Horas extra
+  let extra = null;
+  if (!sinExtra) {
+    // Operarios: horas extra solo desde 06:00 am como mínimo
+    const entEfectiva = esOperario ? Math.max(entMin, OPERARIO_EXTRA_FROM) : entMin;
+    const adelanto    = Math.max(0, entRef - entEfectiva);
+    const extension   = Math.max(0, salMin - salRef);
+    const total       = adelanto + extension;
+    if (total > 0) extra = total;
+  }
+  const demora      = Math.max(0, entMin - entRef);
+  const salTemprana = Math.max(0, salRef - salMin);
+  const entDentro   = Math.max(entMin, entRef);
+  const salDentro   = Math.min(salMin, salRef);
+  const trabajado   = Math.max(0, salDentro - entDentro);
+  return { trabajado, jornada, extra, demora, salTemprana };
 }
 
 function detectSchedule(recs) {
@@ -499,7 +521,16 @@ const TABS = ["Importar","Registros","Empleados","Resumen","Por empleado","Calen
 export default function App() {
   const [tab, setTab]             = useState(0);
   const [records, setRecords]     = useState(()=>loadLS("ar3",[]));
-  const [employees, setEmployees] = useState(()=>loadLS("ae3",makeDefaultEmployees()));
+  const [employees, setEmployees] = useState(()=>{
+    const saved = loadLS("ae3", null);
+    if (saved) {
+      const migrated = {};
+      for (const [k,v] of Object.entries(saved)) migrated[k] = { tipo:"operario", ...v };
+      return migrated;
+    }
+    return makeDefaultEmployees();
+  });
+  const [empTipoF, setEmpTipoF] = useState("todos");
   const [sbLoading, setSbLoading] = useState(false);
   const [sbStatus,  setSbStatus]  = useState(""); // "synced" | "error" | ""
   const [sbLastSync,setSbLastSync]= useState(null);
@@ -613,7 +644,7 @@ export default function App() {
         for(const r of parsed){if(!byEmp[r.empNo])byEmp[r.empNo]=[];byEmp[r.empNo].push(r);}
         for(const[noStr,recs]of Object.entries(byEmp)){
           const no=Number(noStr);
-          if(!u[no]){const d=detectSchedule(recs);u[no]={empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",activo:true,autoDetected:true};}
+          if(!u[no]){const d=detectSchedule(recs);u[no]={empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",activo:true,autoDetected:true,tipo:"operario"};}
         }
         return u;
       });
@@ -632,7 +663,7 @@ export default function App() {
     if(fileRef.current)fileRef.current.value="";
   },[]);
 
-  const startEdit=emp=>{setEditingEmp(emp.empNo);setEditDraft({nombre:emp.nombre,depto:emp.depto,entrada:emp.entrada,salida:emp.salida});};
+  const startEdit=emp=>{setEditingEmp(emp.empNo);setEditDraft({nombre:emp.nombre,depto:emp.depto,entrada:emp.entrada,salida:emp.salida,tipo:emp.tipo||"operario"});};
   const saveEdit=no=>{
     const updated = {...employees[no],...editDraft,autoDetected:false};
     setEmployees(p=>({...p,[no]:updated}));
@@ -652,8 +683,19 @@ export default function App() {
     sbUpsert("empleados", Object.values(updated).map(empToRow));
   };
 
+  const toggleTipo = (empNo) => {
+    setEmployees(p => ({
+      ...p,
+      [empNo]: { ...p[empNo], tipo: (p[empNo].tipo||"operario")==="operario" ? "administrativo" : "operario" }
+    }));
+  };
+
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
-  const filteredEmps=empList.filter(e=>!empF||e.nombre.toLowerCase().includes(empF.toLowerCase())||String(e.empNo).includes(empF));
+  const filteredEmps=empList.filter(e=>{
+    const matchSearch = !empF||e.nombre.toLowerCase().includes(empF.toLowerCase())||String(e.empNo).includes(empF);
+    const matchTipo   = empTipoF==="todos"||(e.tipo||"operario")===empTipoF;
+    return matchSearch && matchTipo;
+  });
   const allRecs = [...records, ...manualRecords];
   const filteredRecs=allRecs
     .filter(r=>(!recF.emp||r.nombre.toLowerCase().includes(recF.emp.toLowerCase())||String(r.empNo).includes(recF.emp))&&(!recF.fecha||r.fecha.includes(recF.fecha)))
@@ -714,6 +756,19 @@ export default function App() {
   };
 
   const H2 = ({children})=><h2 style={{fontFamily:SANS,fontSize:19,fontWeight:600,color:COL.text,margin:"0 0 6px",letterSpacing:"-0.3px"}}>{children}</h2>;
+
+  const TipoBadge = ({tipo, onClick, small}) => {
+    const cfg = TIPO_CFG[tipo||"operario"];
+    return (
+      <span onClick={onClick} title={onClick?"Click para cambiar tipo":undefined}
+        style={{display:"inline-flex",alignItems:"center",background:cfg.bg,color:cfg.color,
+          border:`1px solid ${cfg.border}`,borderRadius:20,padding:small?"2px 8px":"3px 10px",
+          fontSize:small?10:11,fontWeight:600,fontFamily:SANS,cursor:onClick?"pointer":"default",
+          letterSpacing:"0.02em",whiteSpace:"nowrap",transition:"opacity .15s",userSelect:"none"}}>
+        {cfg.label}
+      </span>
+    );
+  };
   const Code = ({children})=><code style={{fontFamily:MONO,background:COL.accentBg,color:COL.accent,padding:"1px 6px",borderRadius:4,fontSize:12}}>{children}</code>;
   const Num = ({children})=><span style={{fontFamily:MONO,fontSize:11,color:COL.textFaint,background:COL.accentBg,padding:"1px 6px",borderRadius:4}}>{children}</span>;
   const TimeTag = ({children,color})=><span style={{fontFamily:MONO,fontSize:13,fontWeight:500,color:color==="g"?"#276749":color==="b"?"#1e5fa8":COL.textSub,background:color==="g"?"#f0faf4":color==="b"?"#ebf4ff":"transparent",padding:"2px 8px",borderRadius:5}}>{children}</span>;
@@ -768,6 +823,8 @@ export default function App() {
           )}
           <span style={S.chip}>{records.length} registros</span>
           <span style={S.chip}>{empSummary.length} activos</span>
+          <span style={{...S.chip,background:"#edf5ff",color:"#1e5fa8"}}>{empList.filter(e=>(e.tipo||"operario")==="operario").length} op.</span>
+          <span style={{...S.chip,background:"#f0faf4",color:"#276749"}}>{empList.filter(e=>e.tipo==="administrativo").length} adm.</span>
         </div>
       </header>
 
@@ -877,7 +934,7 @@ export default function App() {
 
             <div style={S.tblWrap}>
               <table style={S.table}>
-                <THead cols={["N°","Nombre","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana",""]}/>
+                <THead cols={["N°","Nombre","Tipo","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana",""]}/>
                 <tbody>
                   {filteredRecs.slice(0,300).map((r,i)=>{
                     // Merge manual overrides
@@ -930,6 +987,9 @@ export default function App() {
                           {cap(r.nombre)}
                           {r.manual&&<span style={{marginLeft:7,fontSize:10,background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontWeight:600}}>manual</span>}
                         </td>
+                        <td style={{...S.td,padding:"5px 8px"}}>
+                          {employees[r.empNo]&&<TipoBadge tipo={employees[r.empNo].tipo||"operario"} small/>}
+                        </td>
                         <td style={{...S.td,fontFamily:MONO,color:COL.textFaint,fontSize:12}}>{r.fecha}</td>
                         <TimeCell field="entrada" value={rr.entrada} color="#276749"/>
                         <TimeCell field="salida"  value={rr.salida}  color="#1e5fa8"/>
@@ -965,6 +1025,18 @@ export default function App() {
             <H2>Empleados — Horarios de referencia</H2>
             <p style={S.body}>Estos horarios se usan para calcular demoras y salidas tempranas. Editá individualmente o seleccioná varios para asignar un horario en bloque.</p>
 
+            {/* Tipo filter tabs */}
+            <div style={{display:"flex",gap:6,marginBottom:14}}>
+              {[["todos","Todos"],["operario","Operarios"],["administrativo","Administrativos"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setEmpTipoF(val)}
+                  style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${empTipoF===val?COL.accent:COL.border2}`,background:empTipoF===val?COL.accentBg:"#fff",color:empTipoF===val?COL.accent:COL.textSub,fontFamily:SANS,fontSize:12,cursor:"pointer",fontWeight:empTipoF===val?600:400}}>
+                  {label} <span style={{fontFamily:MONO,fontSize:11,color:empTipoF===val?COL.accent:COL.textFaint,marginLeft:4}}>
+                    {val==="todos"?empList.length:empList.filter(e=>(e.tipo||"operario")===val).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <div style={S.bulkBar}>
               <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
                 <span style={{fontSize:13,color:COL.textSub,minWidth:140}}>
@@ -986,7 +1058,7 @@ export default function App() {
               <table style={S.table}>
                 <thead><tr>
                   <th style={{...S.th,width:36}}></th>
-                  {["N°","Nombre","Depto","Entrada ref.","Salida ref.","Activo","Días reg.",""].map((h,i)=><th key={i} style={{...S.th,textAlign:i===1?"left":undefined}}>{h}</th>)}
+                  {["N°","Nombre","Tipo","Depto","Entrada ref.","Salida ref.","Activo","Días reg.",""].map((h,i)=><th key={i} style={{...S.th,textAlign:i===1?"left":undefined}}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {filteredEmps.map((emp,i)=>{
@@ -1001,6 +1073,16 @@ export default function App() {
                         <td style={{...S.td,textAlign:"left",fontWeight:500,color:COL.text}}>
                           {isEd?<input value={editDraft.nombre} onChange={e=>setEditDraft(p=>({...p,nombre:e.target.value}))} style={S.inlineInput}/>
                             :<>{cap(emp.nombre)}{emp.autoDetected&&<span className="chip-auto">auto</span>}</>}
+                        </td>
+                        <td style={{...S.td,padding:"6px 10px"}}>
+                          {isEd
+                            ? <select value={editDraft.tipo||"operario"} onChange={e=>setEditDraft(p=>({...p,tipo:e.target.value}))}
+                                style={{...S.sInput,width:150,padding:"5px 8px",fontSize:12}}>
+                                <option value="operario">Operario</option>
+                                <option value="administrativo">Administrativo</option>
+                              </select>
+                            : <TipoBadge tipo={emp.tipo||"operario"} onClick={()=>toggleTipo(emp.empNo)} small/>
+                          }
                         </td>
                         <td style={S.td}>
                           {isEd?<input value={editDraft.depto} onChange={e=>setEditDraft(p=>({...p,depto:e.target.value}))} style={{...S.inlineInput,width:70,textAlign:"center"}}/>
