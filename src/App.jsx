@@ -200,7 +200,7 @@ const MONO = "'DM Mono', 'Courier New', monospace";
 
 /* ─── PDF export ─────────────────────────────────────────────────────────── */
 function exportLiqPDF(d) {
-  const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, valorHoraExt,
+  const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt,
     importeExtras, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
     descDemoras, horasSalTemp, descSalTemp, totalDescuentos, adelanto,
@@ -315,7 +315,7 @@ function exportLiqPDF(d) {
         <tbody>
           ${row("SUELDO BÁSICO","—","—",fmt(importeSueldo),"sub")}
           ${row("ADICIONALES","","","","section")}
-          ${horasExtra>0  ?row("Horas extra",horasExtra,fmt(valorHoraExt),fmt(importeExtras),"detail","",true):""}
+          ${horasExtra>0  ?row("Horas extra",horasExtraDisplay,fmt(valorHoraExt),fmt(importeExtras),"detail","",true):""}
           ${diasFinde>0   ?row("Días finde/especiales",diasFinde,fmt(valorDiaFinde),fmt(importeFinde),"detail","",true):""}
           ${feriados>0    ?row("Feriados",feriados,fmt(valorDia),fmt(importeFeriados),"detail","",true):row("Feriados","—",fmt(valorDia),"—","muted","",true)}
           ${row("SAC","—","—",sac>0?fmt(sac):"—",sac>0?"detail":"muted","",true)}
@@ -1704,9 +1704,10 @@ export default function App() {
           // Fracciones de 15 min de demoras (redondeo hacia arriba)
           const fraccionesDemora = Math.ceil(totalDemoraMin / 15);
           // Horas de retiro anticipado (en horas, 2 decimales)
-          const horasSalTemp     = parseFloat((totalSalTempMin / 60).toFixed(2));
-          // Horas extra totales
-          const horasExtra       = parseFloat((totalExtraMin / 60).toFixed(2));
+          const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
+          // Horas extra — decimal para cálculos, HH:MM para mostrar
+          const horasExtra        = parseFloat((totalExtraMin / 60).toFixed(10)); // full precision for math
+          const horasExtraDisplay = minsToDisplay(totalExtraMin); // ej: 38h26
 
           // Manual inputs (stored per employee)
           const sueldoBasico  = parseFloat(p.sueldoBasico  || 0);
@@ -1805,7 +1806,7 @@ export default function App() {
                   </div>
                 </div>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,valorHoraExt,importeExtras,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -1899,7 +1900,7 @@ export default function App() {
                       {[
                         ["Días trabajados",        diasTrabajados,       "días (referencia)"],
                         ["Días finde trabajados",  diasFinde,            "días"],
-                        ["Horas extra",            horasExtra,           "hs"],
+                        ["Horas extra",            horasExtraDisplay,    ""],
                         ["Demoras (fracc. 15 min)",fraccionesDemora,     "fracciones"],
                         ["Retiros anticipados",    horasSalTemp,         "hs"],
                       ].map(([l,v,u])=>(
@@ -1936,7 +1937,7 @@ export default function App() {
                           <LiqRow label="SUELDO BÁSICO" cantidad="" valor="" importe={fmt(importeSueldo)} bold />
 
                           <LiqRow label="ADICIONALES" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label="Horas extra"       indent cantidad={horasExtra}     valor={fmt(valorHoraExt)} importe={fmt(importeExtras)} />
+                          <LiqRow label="Horas extra"       indent cantidad={horasExtraDisplay} valor={fmt(valorHoraExt)} importe={fmt(importeExtras)} />
                           <LiqRow label="Días finde/especiales" indent cantidad={diasFinde||"—"} valor={diasFinde?fmt(valorDiaFinde):"—"} importe={diasFinde&&valorDiaFinde?fmt(importeFinde):"—"} />
                           <LiqRow label="Feriados"          indent cantidad={feriados||"—"}  valor={fmt(valorDia)}     importe={feriados?fmt(importeFeriados):"—"} />
                           <LiqRow label="SAC"               indent cantidad=""              valor=""                  importe={sac?fmt(sac):"—"} />
