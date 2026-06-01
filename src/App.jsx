@@ -159,23 +159,24 @@ function calcRecord(rec, empCfg, specialDays) {
   const salMin = parseTimeVal(rec.salida);
   const entRef = parseTimeVal(effectiveCfg.entrada);
   const salRef = parseTimeVal(effectiveCfg.salida);
-  const jornada     = salRef - entRef;
+  const jornada = salRef - entRef;
+  // Horas extra
+  let extra = null;
+  if (!sinExtra) {
+    // Operarios: horas extra desde 06:00 am como mínimo
+    // Administrativos: horas extra desde su hora de entrada configurada (no antes)
+    const limiteEntrada = esOperario ? OPERARIO_EXTRA_FROM : entRef;
+    const entEfectiva   = Math.max(entMin, limiteEntrada);
+    const adelanto      = Math.max(0, entRef - entEfectiva); // siempre 0 con este límite
+    const extension     = Math.max(0, salMin - salRef);
+    const total         = adelanto + extension;
+    if (total > 0) extra = total;
+  }
   const demora      = Math.max(0, entMin - entRef);
   const salTemprana = Math.max(0, salRef - salMin);
   const entDentro   = Math.max(entMin, entRef);
   const salDentro   = Math.min(salMin, salRef);
   const trabajado   = Math.max(0, salDentro - entDentro);
-  // Horas extra
-  let extra = null;
-  if (!sinExtra) {
-    const limiteEntrada  = esOperario && entRef <= OPERARIO_EXTRA_FROM ? OPERARIO_EXTRA_FROM : entRef;
-    const entEfectiva    = Math.max(entMin, limiteEntrada);
-    const adelanto       = Math.max(0, entRef - entEfectiva);
-    const extension      = Math.max(0, salMin - salRef);
-    const total          = adelanto + extension;
-    const cumplioJornada = trabajado >= jornada;
-    if (total > 0 && cumplioJornada) extra = total;
-  }
   return { trabajado, jornada, extra, demora, salTemprana };
 }
 
