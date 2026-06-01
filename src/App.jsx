@@ -277,16 +277,10 @@ function exportLiqPDF(d) {
       <div class="hdr">
         <div class="hdr-left">
           ${logoHTML}
-          <div class="hdr-mid">
-            Parque Industrial — Cipolletti, RN<br>
-            Tel: 0299 - 155 802915<br>
-            mariana.villarroel@pygservicios.com
+          <div class="hdr-mid">            
           </div>
         </div>
-        <div class="hdr-right">
-          <b>C.U.I.T.:</b> 30-71351300-4<br>
-          <b>Ing. Brutos:</b> C.M. 904-489196-1<br>
-          <b>Inicio Act.:</b> 01/10/2013
+        <div class="hdr-right">          
         </div>
       </div>
 
@@ -296,7 +290,7 @@ function exportLiqPDF(d) {
         <div class="doc-title">Planilla Liquidación Sueldos</div>
         <div class="doc-meta">
           Período: <b>${periodo||"—"}</b><br>
-          ${(desde||hasta)?`Rango: ${desde||"inicio"} → ${hasta||"fin"}<br>`:""}
+          ${(desde||hasta)?`${desde||"inicio"} → ${hasta||"fin"}<br>`:""}
           Emitido: ${today}
         </div>
       </div>
