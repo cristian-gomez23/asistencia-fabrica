@@ -330,12 +330,7 @@ function exportLiqPDF(d) {
         </tbody>
       </table>
 
-      <div class="firma-box">
-        <div class="ff">
-          <div class="fl">Firma empleador</div>
-          <div class="fline"></div>          
-        </div>
-      </div>
+    
 
     </div>
     </body></html>`;
