@@ -332,14 +332,8 @@ function exportLiqPDF(d) {
 
       <div class="firma-box">
         <div class="ff">
-          <div class="fl">Firma empleado</div>
-          <div class="fline"></div>
-          <div class="fsub">Aclaración / DNI</div>
-        </div>
-        <div class="ff">
           <div class="fl">Firma empleador</div>
-          <div class="fline"></div>
-          <div class="fsub">MARIANA VILLARROEL — DNI 26.453.930</div>
+          <div class="fline"></div>          
         </div>
       </div>
 
