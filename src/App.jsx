@@ -212,13 +212,8 @@ function exportLiqPDF(d) {
   const today  = new Date().toLocaleDateString("es-AR");
 
   // Try to load logo as base64 from /logo.png (served by Vite from /public)
-  const renderPDF = (logoSrc) => {
+  const renderPDF = () => {
     const GOLD = "#b08a2e";
-    const DARK = "#1a1a1a";
-
-    const logoHTML = logoSrc
-      ? `<img src="${logoSrc}" style="height:52px;width:auto;object-fit:contain;display:block;" alt="logo"/>`
-      : `<span style="font-size:20px;font-weight:900;color:#1a1a1a;font-family:Arial,sans-serif">PyG<span style="color:#b08a2e">SERVICIOS</span></span>`;
 
     const row = (label, cant, val, imp, type, color, indent) => {
       const styles = {
@@ -245,12 +240,7 @@ function exportLiqPDF(d) {
       body{font-family:'Helvetica Neue',Arial,sans-serif;background:#fff;color:#1a1a1a;font-size:11.5px}
       .wrap{max-width:76%;margin:0 auto;border:1px solid #ccc;padding:18px 22px 22px}
       table{width:100%;border-collapse:collapse}
-      .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
-      .hdr-left{display:flex;gap:16px;align-items:flex-start}
-      .hdr-mid{font-size:10px;color:#444;line-height:1.9}
-      .hdr-right{text-align:right;font-size:10px;color:#444;line-height:1.9;border-left:1px solid #ddd;padding-left:14px}
-      .hdr-right b{color:#1a1a1a}
-      .gold-line{border:none;border-top:3px solid #b08a2e;margin:10px 0 14px}
+      .gold-line{border:none;border-top:3px solid #b08a2e;margin:0 0 14px}
       .title-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
       .doc-title{font-size:15px;font-weight:700;color:#1a1a1a;text-transform:uppercase;letter-spacing:0.3px}
       .doc-meta{font-size:10px;color:#555;text-align:right;line-height:1.9}
@@ -265,24 +255,9 @@ function exportLiqPDF(d) {
       .tbl-head th:last-child{text-align:right}
       .total-gold td{padding:9px 10px;font-size:12.5px;font-weight:700;color:#fff;background:#b08a2e}
       .total-gold td:last-child{text-align:right;font-size:13px}
-      .firma-box{display:flex;justify-content:space-between;margin-top:28px}
-      .ff{width:44%}
-      .fl{font-size:8.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:22px}
-      .fline{border-bottom:1px solid #999;margin-bottom:4px}
-      .fsub{font-size:9px;color:#888}
       @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
     </style></head><body>
     <div class="wrap">
-
-      <div class="hdr">
-        <div class="hdr-left">
-          ${logoHTML}
-          <div class="hdr-mid">            
-          </div>
-        </div>
-        <div class="hdr-right">          
-        </div>
-      </div>
 
       <hr class="gold-line"/>
 
@@ -330,7 +305,6 @@ function exportLiqPDF(d) {
         </tbody>
       </table>
 
-    
 
     </div>
     </body></html>`;
@@ -342,16 +316,7 @@ function exportLiqPDF(d) {
     setTimeout(() => { win.print(); }, 700);
   };
 
-  // Attempt to load logo from /logo.png (place file in /public folder of Vite project)
-  fetch("/logo.png")
-    .then(r => r.ok ? r.blob() : Promise.reject())
-    .then(blob => {
-      const reader = new FileReader();
-      reader.onload = () => renderPDF(reader.result);
-      reader.onerror = () => renderPDF(null);
-      reader.readAsDataURL(blob);
-    })
-    .catch(() => renderPDF(null));
+  renderPDF();
 }
 
 
