@@ -752,7 +752,7 @@ function AppMain({ session }) {
         <div style={S.hRight}>
           {sbLoading && (
             <span style={{fontSize:11,color:COL.textFaint,display:"flex",alignItems:"center",gap:5}}>
-              <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#f59e0b",animation:"pulse 1s infinite"}}/>
+              <span style={{display:"inline-block",width:6,height:6,borderRadius:"50%",background:"#f59e0b",animation:"pulse 1s infinite"}}/>
               Sincronizando…
             </span>
           )}
