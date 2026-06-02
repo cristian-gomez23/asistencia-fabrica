@@ -467,7 +467,7 @@ function rowToEmp(r) {
 function diaToRow(fecha, tipo) { return { fecha, tipo }; }
 
 
-const TABS = ["Importar","Registros","Empleados","Resumen","Por empleado","Calendario","Circular","Liquidación"];
+const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Liquidación"];
 
 function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
@@ -482,6 +482,7 @@ function AppMain({ session }) {
     return makeDefaultEmployees();
   });
   const [empTipoF, setEmpTipoF] = useState("todos");
+  const [empActivoF, setEmpActivoF] = useState("todos"); // "todos" | "activo" | "inactivo"
   const [sbLoading, setSbLoading] = useState(false);
   const [sbStatus,  setSbStatus]  = useState(""); // "synced" | "error" | ""
   const [sbLastSync,setSbLastSync]= useState(null);
@@ -643,9 +644,10 @@ function AppMain({ session }) {
 
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
   const filteredEmps=empList.filter(e=>{
-    const matchSearch = !empF||e.nombre.toLowerCase().includes(empF.toLowerCase())||String(e.empNo).includes(empF);
-    const matchTipo   = empTipoF==="todos"||(e.tipo||"operario")===empTipoF;
-    return matchSearch && matchTipo;
+    const matchSearch  = !empF||e.nombre.toLowerCase().includes(empF.toLowerCase())||String(e.empNo).includes(empF);
+    const matchTipo    = empTipoF==="todos"||(e.tipo||"operario")===empTipoF;
+    const matchActivo  = empActivoF==="todos"||(empActivoF==="activo"?e.activo!==false:e.activo===false);
+    return matchSearch && matchTipo && matchActivo;
   });
   const allRecs = [...records, ...manualRecords];
   const filteredRecs=allRecs
@@ -746,7 +748,7 @@ function AppMain({ session }) {
 
       {/* HEADER */}
       <header style={S.header}>
-        <div style={S.logo}><div style={S.dot}/> Control de Asistencia</div>
+        <div style={S.logo}><img src="/PyG-logo.png" alt="PYG S.R.L." style={{height:36,width:"auto",objectFit:"contain",display:"block"}}/></div>
         <div style={S.hRight}>
           {sbLoading && (
             <span style={{fontSize:11,color:COL.textFaint,display:"flex",alignItems:"center",gap:5}}>
@@ -977,7 +979,7 @@ function AppMain({ session }) {
             <p style={S.body}>Estos horarios se usan para calcular demoras y salidas tempranas. Editá individualmente o seleccioná varios para asignar un horario en bloque.</p>
 
             {/* Tipo filter tabs */}
-            <div style={{display:"flex",gap:6,marginBottom:14}}>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
               {[["todos","Todos"],["operario","Operarios"],["administrativo","Administrativos"]].map(([val,label])=>(
                 <button key={val} onClick={()=>setEmpTipoF(val)}
                   style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${empTipoF===val?COL.accent:COL.border2}`,background:empTipoF===val?COL.accentBg:"#fff",color:empTipoF===val?COL.accent:COL.textSub,fontFamily:SANS,fontSize:12,cursor:"pointer",fontWeight:empTipoF===val?600:400}}>
@@ -986,6 +988,24 @@ function AppMain({ session }) {
                   </span>
                 </button>
               ))}
+            </div>
+
+            {/* Activo/Inactivo filter */}
+            <div style={{display:"flex",gap:6,marginBottom:14,alignItems:"center"}}>
+              <span style={{fontSize:11,color:COL.textFaint,fontWeight:500,letterSpacing:"0.05em",textTransform:"uppercase",marginRight:2}}>Estado:</span>
+              {[["todos","Todos"],["activo","Activos"],["inactivo","Inactivos"]].map(([val,label])=>{
+                const count = val==="todos" ? empList.length : val==="activo" ? empList.filter(e=>e.activo!==false).length : empList.filter(e=>e.activo===false).length;
+                const isOn  = empActivoF===val;
+                const colOn = val==="activo" ? "#276749" : val==="inactivo" ? "#9aa5b4" : COL.accent;
+                const bgOn  = val==="activo" ? "#f0faf4"  : val==="inactivo" ? "#f5f5f5"  : COL.accentBg;
+                const bdOn  = val==="activo" ? "#c3e6cb"  : val==="inactivo" ? "#e0e0e0"  : COL.accent;
+                return (
+                  <button key={val} onClick={()=>setEmpActivoF(val)}
+                    style={{padding:"5px 14px",borderRadius:20,border:`1px solid ${isOn?bdOn:COL.border2}`,background:isOn?bgOn:"#fff",color:isOn?colOn:COL.textSub,fontFamily:SANS,fontSize:12,cursor:"pointer",fontWeight:isOn?600:400}}>
+                    {label} <span style={{fontFamily:MONO,fontSize:11,marginLeft:4,color:isOn?colOn:COL.textFaint}}>{count}</span>
+                  </button>
+                );
+              })}
             </div>
 
             <div style={S.bulkBar}>
@@ -1078,8 +1098,8 @@ function AppMain({ session }) {
           </div>
         )}
 
-        {/* ── 3 RESUMEN ── */}
-        {tab===3&&(
+        {/* ── RESUMEN (oculto) ── */}
+        {tab===-1&&(
           <div style={{maxWidth:960}}>
             <H2>Resumen del período</H2>
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:26}}>
@@ -1132,7 +1152,7 @@ function AppMain({ session }) {
 
 
         {/* ── 4 POR EMPLEADO ── */}
-        {tab===4&&(()=>{
+        {tab===3&&(()=>{
           const empOptions = empList.filter(e=>e.activo!==false&&records.some(r=>r.empNo===e.empNo));
           const selEmp     = detalleEmp ? employees[detalleEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
@@ -1264,7 +1284,7 @@ function AppMain({ session }) {
 
 
         {/* ── 5 CALENDARIO ── */}
-        {tab===5&&(()=>{
+        {tab===4&&(()=>{
           const allDates = [...new Set(records.map(r=>r.fecha))].sort();
 
           const toggleDay = (fecha, tipo) => {
@@ -1391,7 +1411,7 @@ function AppMain({ session }) {
 
 
         {/* ── 6 CIRCULAR — Escala salarial ── */}
-        {tab===6&&(()=>{
+        {tab===5&&(()=>{
           const activeEmps = empList.filter(e=>e.activo!==false);
           const filteredCircular = activeEmps.filter(e=>
             !circularF ||
@@ -1606,7 +1626,7 @@ function AppMain({ session }) {
 
 
         {/* ── 7 LIQUIDACIÓN ── */}
-        {tab===7&&(()=>{
+        {tab===6&&(()=>{
           const empOptions = empList.filter(e=>e.activo!==false&&records.some(r=>r.empNo===e.empNo));
           const selEmp     = liqEmp ? employees[liqEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
