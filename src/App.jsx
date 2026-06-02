@@ -748,7 +748,7 @@ function AppMain({ session }) {
 
       {/* HEADER */}
       <header style={S.header}>
-        <div style={S.logo}><img src="/PyG-logo.png" alt="PYG S.R.L." style={{height:36,width:"auto",objectFit:"contain",display:"block"}}/></div>
+        <div style={S.logo}><img src="/PyG-logo.png" alt="PYG S.R.L." style={{height:40,width:"auto",objectFit:"contain",display:"block"}}/></div>
         <div style={S.hRight}>
           {sbLoading && (
             <span style={{fontSize:11,color:COL.textFaint,display:"flex",alignItems:"center",gap:5}}>
