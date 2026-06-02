@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
+import LoginScreen from "./LoginScreen";
 
 /* ─── Google Fonts injection ─────────────────────────────────────────────── */
 const fontLink = document.createElement("link");
@@ -468,7 +469,7 @@ function diaToRow(fecha, tipo) { return { fecha, tipo }; }
 
 const TABS = ["Importar","Registros","Empleados","Resumen","Por empleado","Calendario","Circular","Liquidación"];
 
-export default function App() {
+function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
   const [records, setRecords]     = useState(()=>loadLS("ar3",[]));
   const [employees, setEmployees] = useState(()=>{
@@ -1922,6 +1923,76 @@ export default function App() {
         })()}
 
       </main>
+    </div>
+  );
+}
+
+/* ─── Auth wrapper ───────────────────────────────────────────────────────── */
+export default function App() {
+  const [session, setSession] = useState(() => {
+    try {
+      const s = sessionStorage.getItem("pyg_session");
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  });
+
+  const handleLogin = (sessionData) => {
+    sessionStorage.setItem("pyg_session", JSON.stringify(sessionData));
+    setSession(sessionData);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("pyg_session");
+    setSession(null);
+  };
+
+  if (!session) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* Badge de sesión + botón logout */}
+      <div style={{
+        position: "fixed", bottom: 18, right: 18, zIndex: 9999,
+        display: "flex", alignItems: "center", gap: 8,
+        background: "#ffffff", border: "1px solid #dde3ec",
+        borderRadius: 40, padding: "6px 14px 6px 10px",
+        boxShadow: "0 2px 12px rgba(26,58,107,0.12)",
+        fontFamily: "'DM Sans', system-ui, sans-serif",
+        fontSize: 12,
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%",
+          background: "#22c55e", display: "inline-block",
+          boxShadow: "0 0 0 2px rgba(34,197,94,0.25)",
+        }} />
+        <span style={{ color: "#4a5a6a", fontWeight: 500 }}>
+          {session.usuario}
+        </span>
+        <span style={{
+          background: "#edf2f9", color: "#3d6b9e",
+          borderRadius: 20, padding: "1px 7px",
+          fontSize: 10.5, fontWeight: 600, letterSpacing: "0.04em",
+        }}>
+          {session.rol}
+        </span>
+        <button
+          onClick={handleLogout}
+          title="Cerrar sesión"
+          style={{
+            marginLeft: 4, background: "none", border: "none", cursor: "pointer",
+            color: "#96a3b0", padding: 2, display: "flex", alignItems: "center",
+          }}
+        >
+          <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
+      <AppMain session={session} />
     </div>
   );
 }
