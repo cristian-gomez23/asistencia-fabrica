@@ -434,6 +434,7 @@ function recToRow(r, periodo) {
     solo_entrada: r.soloEntrada || false,
     manual: r.manual || false,
     periodo: periodo || r.fecha?.slice(0,7),
+    observacion: r.observacion || null,
   };
 }
 
@@ -442,6 +443,7 @@ function rowToRec(r) {
     id: r.id, empNo: r.emp_no, nombre: r.nombre, depto: r.depto,
     fecha: r.fecha, entrada: r.entrada, salida: r.salida,
     soloEntrada: r.solo_entrada, manual: r.manual,
+    observacion: r.observacion || null,
   };
 }
 
@@ -502,7 +504,7 @@ function AppMain({ session }) {
   const [manualRecords, setManualRecords] = useState(()=>loadLS("man_rec",[]));   // fully manual records
   const [editingCell, setEditingCell]     = useState(null); // {id, field}
   const [addingRec, setAddingRec]         = useState(false);
-  const [newRec, setNewRec]               = useState({empNo:"",fecha:"",entrada:"",salida:""});
+  const [newRec, setNewRec]               = useState({empNo:"",fecha:"",entrada:"",salida:"",observacion:""});
   const [liqParams, setLiqParams]   = useState(() => {
     try { const r = localStorage.getItem("liq_params"); if (r) return JSON.parse(r); } catch {}
     return {};
@@ -883,29 +885,38 @@ function AppMain({ session }) {
                   <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Salida</div>
                   <input type="time" value={newRec.salida} onChange={e=>setNewRec(p=>({...p,salida:e.target.value}))} style={S.tInp}/>
                 </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>{
-                    if(!newRec.empNo||!newRec.fecha||!newRec.entrada) return;
-                    const emp=employees[Number(newRec.empNo)];
-                    if(!emp) return;
-                    const id=`${newRec.empNo}_${newRec.fecha}_manual`;
-                    const manRec={
-                      id, empNo:Number(newRec.empNo), nombre:emp.nombre, depto:emp.depto,
-                      fecha:newRec.fecha, entrada:newRec.entrada, salida:newRec.salida||null,
-                      soloEntrada:!newRec.salida, manual:true
-                    };
-                    setManualRecords(p=>[...p.filter(r=>r.id!==id),manRec]);
-                    setAddingRec(false);
-                    sbUpsertSingle("registros", recToRow(manRec));
-                  }} style={S.saveBtn}>Guardar</button>
-                  <button onClick={()=>setAddingRec(false)} style={S.cancelBtn}>Cancelar</button>
+                  <div>
+                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Observación</div>
+                  <input value={newRec.observacion||""} onChange={e=>setNewRec(p=>({...p,observacion:e.target.value}))}
+                    placeholder="Opcional..." style={{...S.sInput,width:200,padding:"5px 8px",fontSize:12}}/>
+                </div>
+                <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                  {(!newRec.empNo||!newRec.fecha)&&<span style={{fontSize:11,color:"#c53030"}}>* Empleado y fecha requeridos</span>}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>{
+                      if(!newRec.empNo||!newRec.fecha) return;
+                      const emp=employees[Number(newRec.empNo)];
+                      if(!emp) return;
+                      const id=`${newRec.empNo}_${newRec.fecha}_manual`;
+                      const manRec={
+                        id, empNo:Number(newRec.empNo), nombre:emp.nombre, depto:emp.depto,
+                        fecha:newRec.fecha, entrada:newRec.entrada||null, salida:newRec.salida||null,
+                        soloEntrada:!newRec.salida&&!newRec.entrada, manual:true,
+                        observacion:newRec.observacion||null
+                      };
+                      setManualRecords(p=>[...p.filter(r=>r.id!==id),manRec]);
+                      setAddingRec(false);
+                      sbUpsertSingle("registros", recToRow(manRec));
+                    }} style={S.saveBtn}>Guardar</button>
+                    <button onClick={()=>setAddingRec(false)} style={S.cancelBtn}>Cancelar</button>
+                  </div>
                 </div>
               </div>
             )}
 
             <div style={S.tblWrap}>
               <table style={S.table}>
-                <THead cols={["N°","Nombre","Tipo","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana",""]}/>
+                <THead cols={["N°","Nombre","Tipo","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana","Obs.",""]}/>
                 <tbody>
                   {filteredRecs.slice(0,300).map((r,i)=>{
                     // Merge manual overrides
@@ -972,12 +983,17 @@ function AppMain({ session }) {
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:c.demora>0?"#c53030":"#c0c8d2"}}>{c.demora>0?minsToDisplay(c.demora):"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>{c.salTemprana>0?minsToDisplay(c.salTemprana):"—"}</td>
+                        <td style={{...S.td,fontSize:11,color:COL.textFaint,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.observacion||""}>
+                          {r.observacion||"—"}
+                        </td>
                         <td style={{...S.td,padding:"5px 8px",width:28}}>
-                          {r.manual&&(
-                            <button onClick={()=>{setManualRecords(p=>p.filter(x=>x.id!==r.id));sbDelete("registros",r.id);}}
-                              title="Eliminar registro manual"
-                              style={{background:"none",border:"none",cursor:"pointer",color:"#fca5a5",fontSize:15,lineHeight:1,padding:2}}>×</button>
-                          )}
+                          <button onClick={()=>{
+                            if(r.manual){setManualRecords(p=>p.filter(x=>x.id!==r.id));}
+                            else{setRecords(p=>p.filter(x=>x.id!==r.id));}
+                            sbDelete("registros",r.id);
+                          }}
+                            title="Eliminar registro"
+                            style={{background:"none",border:"none",cursor:"pointer",color:"#fca5a5",fontSize:15,lineHeight:1,padding:2}}>×</button>
                         </td>
                       </tr>
                     );
