@@ -435,6 +435,7 @@ function recToRow(r, periodo) {
     manual: r.manual || false,
     periodo: periodo || r.fecha?.slice(0,7),
     observacion: r.observacion || null,
+    ausencia: r.ausencia || null,
   };
 }
 
@@ -504,7 +505,7 @@ function AppMain({ session }) {
   const [manualRecords, setManualRecords] = useState(()=>loadLS("man_rec",[]));   // fully manual records
   const [editingCell, setEditingCell]     = useState(null); // {id, field}
   const [addingRec, setAddingRec]         = useState(false);
-  const [newRec, setNewRec]               = useState({empNo:"",fecha:"",entrada:"",salida:"",observacion:""});
+  const [newRec, setNewRec]               = useState({empNo:"",fecha:"",entrada:"",salida:"",observacion:"",ausencia:""});
   const [liqParams, setLiqParams]   = useState(() => {
     try { const r = localStorage.getItem("liq_params"); if (r) return JSON.parse(r); } catch {}
     return {};
@@ -878,14 +879,25 @@ function AppMain({ session }) {
                   <input type="date" value={newRec.fecha} onChange={e=>setNewRec(p=>({...p,fecha:e.target.value}))} style={{...S.dateInput}}/>
                 </div>
                 <div>
-                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Entrada</div>
-                  <input type="time" value={newRec.entrada} onChange={e=>setNewRec(p=>({...p,entrada:e.target.value}))} style={S.tInp}/>
+                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Tipo</div>
+                  <select value={newRec.ausencia||""} onChange={e=>setNewRec(p=>({...p,ausencia:e.target.value}))}
+                    style={{...S.sInput,width:160,padding:"7px 10px"}}>
+                    <option value="">— Normal —</option>
+                    <option value="aus_just">Ausencia justificada</option>
+                    <option value="aus_injust">Ausencia injustificada</option>
+                  </select>
                 </div>
-                <div>
-                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Salida</div>
-                  <input type="time" value={newRec.salida} onChange={e=>setNewRec(p=>({...p,salida:e.target.value}))} style={S.tInp}/>
-                </div>
+                {!newRec.ausencia&&<>
                   <div>
+                    <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Entrada</div>
+                    <input type="time" value={newRec.entrada} onChange={e=>setNewRec(p=>({...p,entrada:e.target.value}))} style={S.tInp}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Salida</div>
+                    <input type="time" value={newRec.salida} onChange={e=>setNewRec(p=>({...p,salida:e.target.value}))} style={S.tInp}/>
+                  </div>
+                </>}
+                <div>
                   <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Observación</div>
                   <input value={newRec.observacion||""} onChange={e=>setNewRec(p=>({...p,observacion:e.target.value}))}
                     placeholder="Opcional..." style={{...S.sInput,width:200,padding:"5px 8px",fontSize:12}}/>
@@ -897,11 +909,15 @@ function AppMain({ session }) {
                       if(!newRec.empNo||!newRec.fecha) return;
                       const emp=employees[Number(newRec.empNo)];
                       if(!emp) return;
-                      const id=`${newRec.empNo}_${newRec.fecha}_manual`;
+                      const sufijo = newRec.ausencia ? `_${newRec.ausencia}` : "_manual";
+                      const id=`${newRec.empNo}_${newRec.fecha}${sufijo}`;
                       const manRec={
                         id, empNo:Number(newRec.empNo), nombre:emp.nombre, depto:emp.depto,
-                        fecha:newRec.fecha, entrada:newRec.entrada||null, salida:newRec.salida||null,
-                        soloEntrada:!newRec.salida&&!newRec.entrada, manual:true,
+                        fecha:newRec.fecha,
+                        entrada: newRec.ausencia ? null : (newRec.entrada||null),
+                        salida:  newRec.ausencia ? null : (newRec.salida||null),
+                        soloEntrada: false, manual:true,
+                        ausencia: newRec.ausencia||null,
                         observacion:newRec.observacion||null
                       };
                       setManualRecords(p=>[...p.filter(r=>r.id!==id),manRec]);
@@ -963,11 +979,13 @@ function AppMain({ session }) {
                     );
 
                     return(
-                      <tr key={r.id} style={{background:r.manual?"#fefaf2":i%2===0?"#fff":"#fafbfc"}}>
+                      <tr key={r.id} style={{background:r.ausencia==="aus_injust"?"#fff7ed":r.ausencia==="aus_just"?"#f5f3ff":r.manual?"#fefaf2":i%2===0?"#fff":"#fafbfc"}}>
                         <td style={{...S.td,fontFamily:MONO,fontSize:12,color:COL.accent}}>{r.empNo}</td>
                         <td style={{...S.td,textAlign:"left",fontWeight:500,color:COL.text}}>
                           {cap(r.nombre)}
-                          {r.manual&&<span style={{marginLeft:7,fontSize:10,background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontWeight:600}}>manual</span>}
+                          {r.manual&&!r.ausencia&&<span style={{marginLeft:7,fontSize:10,background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontWeight:600}}>manual</span>}
+                          {r.ausencia==="aus_just"&&<span style={{marginLeft:7,fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 6px",fontWeight:600}}>AUS. JUST.</span>}
+                          {r.ausencia==="aus_injust"&&<span style={{marginLeft:7,fontSize:10,background:"#ffedd5",color:"#dc6b19",borderRadius:4,padding:"1px 6px",fontWeight:600}}>AUS. INJUST.</span>}
                         </td>
                         <td style={{...S.td,padding:"5px 8px"}}>
                           {employees[r.empNo]&&<TipoBadge tipo={employees[r.empNo].tipo||"operario"} small/>}
@@ -1959,13 +1977,25 @@ function AppMain({ session }) {
                     <div style={{background:COL.accentBg,border:`1px solid ${COL.accentSoft}`,borderRadius:12,padding:"16px 20px"}}>
                       <div style={{fontSize:11,color:COL.accent,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:4}}>Datos de asistencia del período</div>
                       {(desde||hasta)&&<div style={{fontSize:11,color:COL.textFaint,marginBottom:10}}>{desde||"inicio"} → {hasta||"fin"} · {rangeCalcs.length} días en rango</div>}
-                      {[
-                        ["Días trabajados",        diasTrabajados,       "días (referencia)"],
-                        ["Días finde trabajados",  diasFinde,            "días"],
-                        ["Horas extra",            horasExtraDisplay,    ""],
-                        ["Demoras (fracc. 15 min)",fraccionesDemora,     "fracciones"],
-                        ["Retiros anticipados",    horasSalTemp,         "hs"],
-                      ].map(([l,v,u])=>(
+                      {(()=>{
+                        const ausInjust = [...records,...manualRecords].filter(r=>
+                          r.empNo===liqEmp && r.ausencia==="aus_injust" &&
+                          (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta)
+                        );
+                        const ausJust = [...records,...manualRecords].filter(r=>
+                          r.empNo===liqEmp && r.ausencia==="aus_just" &&
+                          (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta)
+                        );
+                        return [
+                          ["Días trabajados",           diasTrabajados,       "días (referencia)"],
+                          ["Días finde trabajados",     diasFinde,            "días"],
+                          ["Horas extra",               horasExtraDisplay,    ""],
+                          ["Demoras (fracc. 15 min)",   fraccionesDemora,     "fracciones"],
+                          ["Retiros anticipados",       horasSalTemp,         "hs"],
+                          ...(ausJust.length   ? [["Ausencias justificadas",   ausJust.length,   "días — no descuenta"]] : []),
+                          ...(ausInjust.length ? [["⚠ Ausencias injustificadas", ausInjust.length, "días — revisar descuento"]] : []),
+                        ];
+                      })().map(([l,v,u])=>(
                         <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
                           <span style={{fontSize:12,color:COL.textSub}}>{l}</span>
                           <span style={{fontFamily:MONO,fontSize:13,fontWeight:600,color:COL.accent}}>{v} <span style={{fontSize:11,fontWeight:400,color:COL.textFaint}}>{u}</span></span>
