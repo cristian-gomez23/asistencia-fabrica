@@ -1976,15 +1976,38 @@ function AppMain({ session }) {
           const periodo       = p.periodo || "";
           const ingreso       = p.ingreso || "";
 
+          // Horas extra manuales (fuera del reloj) — se suman a las del reloj
+          const horasExtraManualHs  = parseFloat(p.horasExtraManualHs  || 0); // en horas
+          const horasExtraManualImp = parseFloat(p.horasExtraManualImp || 0); // en importe
+          // Si pusieron importe directo, toma ese; si pusieron horas, calcula importe
+          const importeExtraManual  = horasExtraManualImp > 0
+            ? horasExtraManualImp
+            : horasExtraManualHs * valorHoraExt;
+          const horasExtraManualDisplay = horasExtraManualHs > 0
+            ? `${horasExtraManualHs}h`
+            : horasExtraManualImp > 0 && valorHoraExt > 0
+            ? `${(horasExtraManualImp/valorHoraExt).toFixed(2)}h`
+            : "—";
+
+          // Descuentos — pueden sobreescribirse manualmente
+          const descDemorasCalc   = (valorHora / 4) * fraccionesDemora;
+          const descSalTempCalc   = valorHora * horasSalTemp;
+          const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
+            ? parseFloat(p.descDemorasManual)
+            : null;
+          const descSalTempManual = p.descSalTempManual !== undefined && p.descSalTempManual !== ""
+            ? parseFloat(p.descSalTempManual)
+            : null;
+          const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
+          const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
+
           // Calculations — básico manda, adicionales son extras sobre él
           const importeSueldo    = sueldoBasico;
-          const importeExtras    = valorHoraExt * horasExtra;
+          const importeExtras    = valorHoraExt * horasExtra + importeExtraManual;
           const importeFeriados  = valorDia     * feriados;
           const importeVacaciones= valorDia     * vacaciones;
           const importeFinde     = valorDiaFinde * diasFinde;
           const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde;
-          const descDemoras      = (valorHora / 4) * fraccionesDemora;
-          const descSalTemp      = valorHora    * horasSalTemp;
           const totalDescuentos  = descDemoras + descSalTemp;
           const subtotal         = importeSueldo + totalAdicionales;
           const totalACobrar     = subtotal - totalDescuentos - adelanto;
@@ -2104,6 +2127,102 @@ function AppMain({ session }) {
                       <Field label="Feriados (días)"          field="feriados"  prefix="" note="× valor día" />
                       <Field label="Adelanto"                 field="adelanto" />
 
+                      {/* Horas extra manuales — fuera del reloj */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{fontSize:11,color:"#276749",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
+                          Hs. extra fuera del reloj
+                        </div>
+                        <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                          <div style={{flex:1,minWidth:120}}>
+                            <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Horas</div>
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <input type="number" min="0" step="0.25"
+                                value={p.horasExtraManualHs||""}
+                                onChange={e=>{
+                                  const hs = e.target.value;
+                                  const imp = hs && valorHoraExt ? (parseFloat(hs)*valorHoraExt).toFixed(2) : "";
+                                  setP("horasExtraManualHs", hs);
+                                  if(hs) setP("horasExtraManualImp", imp);
+                                }}
+                                placeholder="0"
+                                style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                              />
+                              <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>hs</span>
+                            </div>
+                          </div>
+                          <div style={{fontSize:13,color:COL.textFaint,paddingBottom:8}}>↔</div>
+                          <div style={{flex:1,minWidth:120}}>
+                            <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Importe</div>
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                              <input type="number" min="0" step="any"
+                                value={p.horasExtraManualImp||""}
+                                onChange={e=>{
+                                  const imp = e.target.value;
+                                  const hs = imp && valorHoraExt ? (parseFloat(imp)/valorHoraExt).toFixed(2) : "";
+                                  setP("horasExtraManualImp", imp);
+                                  if(imp) setP("horasExtraManualHs", hs);
+                                }}
+                                placeholder="0"
+                                style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        {importeExtraManual > 0 && (
+                          <div style={{marginTop:8,fontSize:11,color:"#276749",fontFamily:MONO}}>
+                            + {horasExtraManualDisplay} = ${Math.round(importeExtraManual).toLocaleString("es-AR")}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Descuentos editables */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{fontSize:11,color:"#c53030",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
+                          Descuentos (editables)
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
+                            Llegadas tarde
+                            <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>
+                              (calc: ${Math.round(descDemorasCalc).toLocaleString("es-AR")})
+                            </span>
+                          </label>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                            <input type="number" min="0" step="any"
+                              value={p.descDemorasManual !== undefined ? p.descDemorasManual : ""}
+                              onChange={e=>setP("descDemorasManual", e.target.value)}
+                              placeholder={Math.round(descDemorasCalc)||"0"}
+                              style={{...S.sInput,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13,
+                                borderColor: descDemorasManual!==null?"#f59e0b":undefined}}
+                            />
+                            {descDemorasManual!==null&&<button onClick={()=>setP("descDemorasManual","")}
+                              style={{fontSize:10,color:COL.textFaint,background:"none",border:"none",cursor:"pointer"}}>↺</button>}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
+                            Retiros anticipados
+                            <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>
+                              (calc: ${Math.round(descSalTempCalc).toLocaleString("es-AR")})
+                            </span>
+                          </label>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                            <input type="number" min="0" step="any"
+                              value={p.descSalTempManual !== undefined ? p.descSalTempManual : ""}
+                              onChange={e=>setP("descSalTempManual", e.target.value)}
+                              placeholder={Math.round(descSalTempCalc)||"0"}
+                              style={{...S.sInput,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13,
+                                borderColor: descSalTempManual!==null?"#f59e0b":undefined}}
+                            />
+                            {descSalTempManual!==null&&<button onClick={()=>setP("descSalTempManual","")}
+                              style={{fontSize:10,color:COL.textFaint,background:"none",border:"none",cursor:"pointer"}}>↺</button>}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Días finde checkboxes */}
                       {allFindeInRange.length > 0 && (
                         <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
@@ -2203,7 +2322,8 @@ function AppMain({ session }) {
                           <LiqRow label="SUELDO BÁSICO" cantidad="" valor="" importe={fmt(importeSueldo)} bold />
 
                           <LiqRow label="ADICIONALES" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label="Horas extra"       indent cantidad={horasExtraDisplay} valor={fmt(valorHoraExt)} importe={fmt(importeExtras)} />
+                          <LiqRow label="Horas extra (reloj)" indent cantidad={horasExtraDisplay} valor={fmt(valorHoraExt)} importe={fmt(valorHoraExt*horasExtra)} />
+                          {importeExtraManual>0&&<LiqRow label="Horas extra (manual)" indent cantidad={horasExtraManualDisplay} valor={fmt(valorHoraExt)} importe={fmt(importeExtraManual)} />}
                           <LiqRow label="Días finde/especiales" indent cantidad={diasFinde||"—"} valor={diasFinde?fmt(valorDiaFinde):"—"} importe={diasFinde&&valorDiaFinde?fmt(importeFinde):"—"} />
                           <LiqRow label="Feriados"          indent cantidad={feriados||"—"}  valor={fmt(valorDia)}     importe={feriados?fmt(importeFeriados):"—"} />
                           <LiqRow label="SAC"               indent cantidad=""              valor=""                  importe={sac?fmt(sac):"—"} />
@@ -2213,8 +2333,8 @@ function AppMain({ session }) {
                           <LiqRow label="Sueldo + adicionales" cantidad="" valor="" importe={fmt(subtotal)} bold color={COL.accent} separator />
 
                           <LiqRow label="DESCUENTOS" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label="Llegadas tarde (fracc. 15 min)" indent cantidad={fraccionesDemora} valor={`${fmt(valorHora)}/4`} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
-                          <LiqRow label="Retiros anticipados (x hora)"   indent cantidad={horasSalTemp}     valor={fmt(valorHora)}      importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
+                          <LiqRow label={`Llegadas tarde${descDemorasManual!==null?" ✎":""}`} indent cantidad={fraccionesDemora} valor={`${fmt(valorHora)}/4`} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
+                          <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={horasSalTemp} valor={fmt(valorHora)} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
                           <LiqRow label="Total descuentos" cantidad="" valor="" importe={totalDescuentos?fmt(totalDescuentos):"—"} bold color="#c53030" separator />
 
                           <LiqRow label="Adelanto" cantidad="" valor="" importe={adelanto?fmt(adelanto):"—"} bold color="#b45309" separator />
