@@ -328,15 +328,15 @@ const SB_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 const SB_HEADERS = (write=false) => ({
   "Content-Type": "application/json",
-  "Authorization": `Bearer ${write ? SB_KEY : (SB_ANON||SB_KEY)}`,
-  "apikey": write ? SB_KEY : (SB_ANON||SB_KEY),
+  "Authorization": `Bearer ${SB_KEY}`,
+  "apikey": SB_KEY,
   "Accept-Profile": "rrhh",
   ...(write ? {"Content-Profile":"rrhh"} : {}),
 });
 
 // ── Read all rows from a table ────────────────────────────────────────────
 async function sbFetch(table, params="") {
-  if (!SB_URL || !(SB_KEY||SB_ANON)) return null;
+  if (!SB_URL || !SB_KEY) return null;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
       headers: SB_HEADERS(false),
@@ -383,9 +383,9 @@ async function sbDelete(table, id, pk="id") {
 
 // ── Realtime subscription via Supabase websocket ─────────────────────────
 function sbSubscribe(table, onInsert, onUpdate, onDelete) {
-  if (!SB_URL || !(SB_KEY||SB_ANON)) return () => {};
+  if (!SB_URL || !SB_KEY) return () => {};
   const wsUrl = SB_URL.replace("https://","wss://").replace("http://","ws://");
-  const key   = SB_ANON || SB_KEY;
+  const key   = SB_KEY;
   let ws, heartbeat;
 
   const connect = () => {
@@ -521,7 +521,7 @@ function AppMain({ session }) {
 
   // ── Load from Supabase on mount ──────────────────────────────────────────
   useEffect(()=>{
-    if (!SB_URL || !(SB_KEY||SB_ANON)) return;
+    if (!SB_URL || !SB_KEY) return;
     setSbLoading(true);
     Promise.all([
       sbFetch("registros","select=*&limit=10000"),
@@ -529,11 +529,10 @@ function AppMain({ session }) {
       sbFetch("dias_especiales","select=*"),
       sbFetch("correcciones","select=*"),
     ]).then(([regs,emps,dias,corrs])=>{
-      if (regs?.length) {
-        const byId={};
-        for(const r of regs) byId[r.id]=rowToRec(r);
-        setRecords(Object.values(byId));
-      }
+      // Supabase es la fuente de verdad — sobreescribe siempre el estado local
+      const byId={};
+      if (regs?.length) { for(const r of regs) byId[r.id]=rowToRec(r); }
+      setRecords(Object.values(byId)); // siempre setear, aunque sea vacío
       if (emps?.length) {
         const map={...makeDefaultEmployees()};
         for(const e of emps) map[e.emp_no]={...map[e.emp_no],...rowToEmp(e)};
@@ -543,7 +542,7 @@ function AppMain({ session }) {
         const map={};
         for(const d of dias) map[d.fecha]={tipo:d.tipo};
         setSpecialDays(map);
-      }
+      } else { setSpecialDays({}); }
       if (corrs?.length) {
         const salMap={}, entMap={};
         for(const c of corrs){
@@ -552,15 +551,13 @@ function AppMain({ session }) {
         }
         setManualSalidas(prev=>({...prev,...salMap,...entMap}));
       }
-      setSbLoading(false);
-      setSbStatus("synced");
-      setSbLastSync(new Date());
-    }).catch(()=>{ setSbLoading(false); setSbStatus("error"); });
+      setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
+    }).catch((err)=>{ console.error("Supabase load error:", err); setSbLoading(false); setSbStatus("error"); });
   },[]);
 
   // ── Realtime subscriptions ───────────────────────────────────────────────
   useEffect(()=>{
-    if (!SB_URL || !(SB_KEY||SB_ANON)) return;
+    if (!SB_URL || !SB_KEY) return;
 
     const unsubRegs = sbSubscribe("registros",
       (r)=>setRecords(p=>{const m={};for(const x of p)m[x.id]=x;m[r.id]=rowToRec(r);return Object.values(m);}),
@@ -748,7 +745,7 @@ function AppMain({ session }) {
 
       {/* HEADER */}
       <header style={S.header}>
-        <div style={S.logo}><img src="/PyG-logo.png" alt="PYG S.R.L." style={{height:45,width:"auto",objectFit:"contain",display:"block"}}/></div>
+        <div style={S.logo}><img src="/PyG-logo.png" alt="PYG S.R.L." style={{height:36,width:"auto",objectFit:"contain",display:"block"}}/></div>
         <div style={S.hRight}>
           {sbLoading && (
             <span style={{fontSize:11,color:COL.textFaint,display:"flex",alignItems:"center",gap:5}}>
