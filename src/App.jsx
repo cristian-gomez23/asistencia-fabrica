@@ -452,6 +452,7 @@ function empToRow(e) {
     depto: e.depto, entrada_ref: e.entrada, salida_ref: e.salida,
     activo: e.activo !== false,
     auto_detected: e.autoDetected || false,
+    tipo: e.tipo || "operario",
   };
 }
 
@@ -461,6 +462,7 @@ function rowToEmp(r) {
     nombreDisplay: r.nombre_display,
     depto: r.depto, entrada: r.entrada_ref, salida: r.salida_ref,
     activo: r.activo, autoDetected: r.auto_detected,
+    tipo: r.tipo || "operario",
   };
 }
 
@@ -650,10 +652,12 @@ function AppMain({ session }) {
   };
 
   const toggleTipo = (empNo) => {
-    setEmployees(p => ({
-      ...p,
-      [empNo]: { ...p[empNo], tipo: (p[empNo].tipo||"operario")==="operario" ? "administrativo" : "operario" }
-    }));
+    setEmployees(p => {
+      const nuevoTipo = (p[empNo].tipo||"operario")==="operario" ? "administrativo" : "operario";
+      const updated = { ...p[empNo], tipo: nuevoTipo };
+      sbUpsertSingle("empleados", empToRow(updated), "emp_no");
+      return { ...p, [empNo]: updated };
+    });
   };
 
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
