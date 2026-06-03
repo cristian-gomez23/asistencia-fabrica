@@ -514,7 +514,16 @@ function AppMain({ session }) {
   // ── Persist to localStorage as cache ────────────────────────────────────
   useEffect(()=>saveLS("ar3",records),[records]);
   useEffect(()=>saveLS("ae3",employees),[employees]);
-  useEffect(()=>saveLS("liq_params",liqParams),[liqParams]);
+  useEffect(()=>{
+    saveLS("liq_params",liqParams);
+    // Sync cada cambio a Supabase
+    Object.entries(liqParams).forEach(([empNo, datos]) => {
+      const n = parseInt(empNo);
+      if (!isNaN(n) && n > 0) {
+        sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
+      }
+    });
+  },[liqParams]);
   useEffect(()=>saveLS("sp_days",specialDays),[specialDays]);
   useEffect(()=>saveLS("man_sal",manualSalidas),[manualSalidas]);
   useEffect(()=>saveLS("man_rec",manualRecords),[manualRecords]);
@@ -528,7 +537,8 @@ function AppMain({ session }) {
       sbFetch("empleados","select=*"),
       sbFetch("dias_especiales","select=*"),
       sbFetch("correcciones","select=*"),
-    ]).then(([regs,emps,dias,corrs])=>{
+      sbFetch("liq_params","select=*"),
+    ]).then(([regs,emps,dias,corrs,liqRows])=>{
       // Solo sobreescribir si Supabase trae datos — nunca borrar con array vacío
       if (regs?.length) {
         const byId={};
@@ -552,6 +562,11 @@ function AppMain({ session }) {
           if(c.entrada_corr) entMap[c.id+"_ent"]=c.entrada_corr;
         }
         setManualSalidas(prev=>({...prev,...salMap,...entMap}));
+      }
+      if (liqRows?.length) {
+        const map = {};
+        for (const row of liqRows) map[String(row.emp_no)] = row.datos;
+        setLiqParams(map);
       }
       setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
     }).catch((err)=>{ console.error("Supabase load error:", err); setSbLoading(false); setSbStatus("error"); });
