@@ -472,7 +472,7 @@ function rowToEmp(r) {
 function diaToRow(fecha, tipo) { return { fecha, tipo }; }
 
 
-const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Liquidación"];
+const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Resumen","Liquidación"];
 
 function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
@@ -1619,6 +1619,9 @@ function AppMain({ session }) {
                                   valorDiaFinde: p.valorDiaFinde ||"",
                                   observaciones: p.observaciones ||"",
                                   periodoCircular: p.periodoCircular||"",
+                                  area:          p.area          ||"",
+                                  nombreDisplay: p.nombreDisplay ||"",
+                                  ingreso:       p.ingreso       ||"",
                                 });
                               }} className="hov-edit" style={S.editBtn}>✏ Editar</button>
                           }
@@ -1628,6 +1631,32 @@ function AppMain({ session }) {
                       <div style={{padding:"16px 20px"}}>
 
                         {/* Top info row */}
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:12}}>
+                          <div>
+                            <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Nombre en liquidación</div>
+                            {isEd
+                              ? <input value={circularDraft.nombreDisplay||""} onChange={e=>setCircularDraft(p=>({...p,nombreDisplay:e.target.value}))} placeholder={cap(emp.nombre)}
+                                  style={{...S.sInput,width:"100%",padding:"6px 10px",fontSize:13}}/>
+                              : <span style={{fontSize:13,fontWeight:600,color:p.nombreDisplay?COL.text:"#c0c8d2"}}>{p.nombreDisplay||cap(emp.nombre)}</span>
+                            }
+                          </div>
+                          <div>
+                            <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Área</div>
+                            {isEd
+                              ? <input value={circularDraft.area||""} onChange={e=>setCircularDraft(p=>({...p,area:e.target.value}))} placeholder="ej: Producción"
+                                  style={{...S.sInput,width:"100%",padding:"6px 10px",fontSize:13}}/>
+                              : <span style={{fontSize:13,color:p.area?COL.text:"#c0c8d2"}}>{p.area||"—"}</span>
+                            }
+                          </div>
+                          <div>
+                            <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Período circular</div>
+                            {isEd
+                              ? <input value={circularDraft.periodoCircular||""} onChange={e=>setCircularDraft(p=>({...p,periodoCircular:e.target.value}))} placeholder="ej: ago-25"
+                                  style={{...S.sInput,width:"100%",padding:"6px 10px",fontSize:13}}/>
+                              : <span style={{fontSize:13,color:p.periodoCircular?COL.text:"#c0c8d2"}}>{p.periodoCircular||"—"}</span>
+                            }
+                          </div>
+                        </div>
                         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:18}}>
                           <div>
                             <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Sueldo bruto</div>
@@ -1642,11 +1671,11 @@ function AppMain({ session }) {
                             <span style={{fontSize:13,color:COL.textSub}}>Lunes a Sábados {horarioDisplay}</span>
                           </div>
                           <div>
-                            <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Período circular</div>
+                            <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Fecha ingreso</div>
                             {isEd
-                              ? <input value={circularDraft.periodoCircular||""} onChange={e=>setCircularDraft(p=>({...p,periodoCircular:e.target.value}))} placeholder="ej: ago-25"
+                              ? <input type="date" value={circularDraft.ingreso||""} onChange={e=>setCircularDraft(p=>({...p,ingreso:e.target.value}))}
                                   style={{...S.sInput,width:"100%",padding:"6px 10px",fontSize:13}}/>
-                              : <span style={{fontSize:13,color:p.periodoCircular?COL.text:"#c0c8d2"}}>{p.periodoCircular||"—"}</span>
+                              : <span style={{fontSize:13,color:p.ingreso?COL.text:"#c0c8d2"}}>{p.ingreso?new Date(p.ingreso+"T12:00:00").toLocaleDateString("es-AR"):"—"}</span>
                             }
                           </div>
                         </div>
@@ -1735,7 +1764,152 @@ function AppMain({ session }) {
 
 
         {/* ── 7 LIQUIDACIÓN ── */}
+                {/* ── 6 RESUMEN LIQUIDACIONES ── */}
         {tab===6&&(()=>{
+          const activeEmps = empList.filter(e=>e.activo!==false);
+          const getP = (empNo) => liqParams[String(empNo)] || {};
+
+          const fmt$ = n => n ? `$${Math.round(Number(n)).toLocaleString("es-AR")}` : "—";
+
+          // Calcular totales de liquidación para cada empleado activo con datos
+          const filas = activeEmps
+            .map(emp => {
+              const p = getP(emp.empNo);
+              if (!p.sueldoBasico) return null;
+
+              const sueldoBasico  = parseFloat(p.sueldoBasico  || 0);
+              const valorHoraExt  = parseFloat(p.valorHoraExt  || 0);
+              const valorDia      = parseFloat(p.valorDia      || 0);
+              const valorHora     = parseFloat(p.valorHora     || 0);
+              const valorDiaFinde = parseFloat(p.valorDiaFinde || 0);
+              const adelanto      = parseFloat(p.adelanto      || 0);
+              const feriados      = parseFloat(p.feriados      || 0);
+              const sac           = parseFloat(p.sac           || 0);
+              const vacaciones    = parseFloat(p.vacaciones    || 0);
+
+              const desde = p.desde || "";
+              const hasta = p.hasta || "";
+
+              // Calcular desde registros de asistencia
+              const empCalcs = (empSummary.find(s=>s.emp.empNo===emp.empNo)?.calcs || [])
+                .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
+
+              const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
+              const totalDemoraMin  = empCalcs.reduce((s,r)=>s+(r.demora||0),0);
+              const totalSalTempMin = empCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
+              const horasExtra      = totalExtraMin / 60;
+              const fraccionesDem   = Math.ceil(totalDemoraMin / 15);
+              const horasSalTemp    = totalSalTempMin / 60;
+
+              const allFindeInRange = empCalcs.filter(r=>{const d=new Date(r.fecha+"T12:00:00").getDay();return d===0||d===6;});
+              const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
+              const diasFinde       = findeSel.size;
+
+              const importeExtras    = valorHoraExt  * horasExtra;
+              const importeFeriados  = valorDia      * feriados;
+              const importeVacacion  = valorDia      * vacaciones;
+              const importeFinde     = valorDiaFinde * diasFinde;
+              const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
+              const descDemoras      = (valorHora / 4) * fraccionesDem;
+              const descSalTemp      = valorHora * horasSalTemp;
+              const totalDesc        = descDemoras + descSalTemp;
+              const subtotal         = sueldoBasico + totalAdicionales - totalDesc - adelanto;
+
+              return {
+                emp,
+                nombre:    p.nombreDisplay || cap(emp.nombre),
+                area:      p.area || "—",
+                ingreso:   p.ingreso || emp.ingreso || "",
+                sueldoBasico,
+                totalAdicionales,
+                totalDesc,
+                adelanto,
+                subtotal,
+              };
+            })
+            .filter(Boolean);
+
+          const totBasico     = filas.reduce((s,f)=>s+f.sueldoBasico,0);
+          const totAdicional  = filas.reduce((s,f)=>s+f.totalAdicionales,0);
+          const totDesc       = filas.reduce((s,f)=>s+f.totalDesc,0);
+          const totAdelanto   = filas.reduce((s,f)=>s+f.adelanto,0);
+          const totSubtotal   = filas.reduce((s,f)=>s+f.subtotal,0);
+
+          const thR = {padding:"9px 14px",color:COL.textFaint,fontSize:11,fontWeight:600,
+            textAlign:"right",whiteSpace:"nowrap",letterSpacing:"0.04em",
+            background:"#f7f8fa",borderBottom:`1px solid ${COL.border}`};
+          const tdR = (color=COL.textSub) => ({padding:"9px 14px",color,textAlign:"right",
+            borderBottom:`1px solid ${COL.border}`,whiteSpace:"nowrap",fontFamily:MONO,fontSize:12});
+
+          return (
+            <div style={{maxWidth:1100}}>
+              <H2>Resumen de liquidaciones</H2>
+              <p style={S.body}>Resumen calculado a partir de los datos de Circular y la asistencia del período configurado en Liquidación.</p>
+
+              {filas.length === 0 && (
+                <div style={{padding:"60px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,
+                  background:COL.surface,borderRadius:12,border:`1px solid ${COL.border}`}}>
+                  No hay empleados con datos en Circular. Completá los valores en la pestaña Circular primero.
+                </div>
+              )}
+
+              {filas.length > 0 && (
+                <div style={S.tblWrap}>
+                  <table style={{...S.table,fontSize:13}}>
+                    <thead>
+                      <tr>
+                        <th style={{...S.th,textAlign:"left",minWidth:180}}>Empleado</th>
+                        <th style={{...S.th,textAlign:"left"}}>Área</th>
+                        <th style={{...S.th,textAlign:"left"}}>Ingreso</th>
+                        <th style={thR}>Sueldo básico</th>
+                        <th style={thR}>Adicionales</th>
+                        <th style={{...thR,color:"#c53030"}}>Desc. hs/días</th>
+                        <th style={{...thR,color:"#b45309"}}>Adelantos</th>
+                        <th style={{...thR,color:"#276749",fontWeight:700}}>Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map((f,i)=>(
+                        <tr key={f.emp.empNo}
+                          style={{background:i%2===0?"#fff":"#fafbfc"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="#f0f4fa"}
+                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"#fff":"#fafbfc"}>
+                          <td style={{...S.td,textAlign:"left",fontWeight:600,color:COL.text}}>
+                            <span style={{fontFamily:MONO,fontSize:11,color:COL.textFaint,marginRight:8}}>{f.emp.empNo}</span>
+                            {f.nombre}
+                          </td>
+                          <td style={{...S.td,textAlign:"left",fontSize:12,color:COL.textFaint}}>{f.area}</td>
+                          <td style={{...S.td,textAlign:"left",fontSize:12,color:COL.textFaint}}>
+                            {f.ingreso ? new Date(f.ingreso+"T12:00:00").toLocaleDateString("es-AR") : "—"}
+                          </td>
+                          <td style={tdR()}>{fmt$(f.sueldoBasico)}</td>
+                          <td style={tdR("#276749")}>{f.totalAdicionales>0?fmt$(f.totalAdicionales):"—"}</td>
+                          <td style={tdR("#c53030")}>{f.totalDesc>0?fmt$(f.totalDesc):"—"}</td>
+                          <td style={tdR("#b45309")}>{f.adelanto>0?fmt$(f.adelanto):"—"}</td>
+                          <td style={{...tdR("#276749"),fontWeight:700,fontSize:13}}>{fmt$(f.subtotal)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:"#f0f4fa",borderTop:`2px solid ${COL.border2}`}}>
+                        <td colSpan={3} style={{padding:"10px 14px",fontWeight:700,fontSize:13,color:COL.text}}>
+                          TOTAL — {filas.length} empleados
+                        </td>
+                        <td style={{...tdR(),fontWeight:700,fontSize:13}}>{fmt$(totBasico)}</td>
+                        <td style={{...tdR("#276749"),fontWeight:700}}>{totAdicional>0?fmt$(totAdicional):"—"}</td>
+                        <td style={{...tdR("#c53030"),fontWeight:700}}>{totDesc>0?fmt$(totDesc):"—"}</td>
+                        <td style={{...tdR("#b45309"),fontWeight:700}}>{totAdelanto>0?fmt$(totAdelanto):"—"}</td>
+                        <td style={{...tdR("#276749"),fontWeight:700,fontSize:14}}>{fmt$(totSubtotal)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+{tab===7&&(()=>{
           const empOptions = empList.filter(e=>e.activo!==false&&records.some(r=>r.empNo===e.empNo));
           const selEmp     = liqEmp ? employees[liqEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
