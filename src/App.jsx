@@ -529,10 +529,12 @@ function AppMain({ session }) {
       sbFetch("dias_especiales","select=*"),
       sbFetch("correcciones","select=*"),
     ]).then(([regs,emps,dias,corrs])=>{
-      // Supabase es la fuente de verdad — sobreescribe siempre el estado local
-      const byId={};
-      if (regs?.length) { for(const r of regs) byId[r.id]=rowToRec(r); }
-      setRecords(Object.values(byId)); // siempre setear, aunque sea vacío
+      // Solo sobreescribir si Supabase trae datos — nunca borrar con array vacío
+      if (regs?.length) {
+        const byId={};
+        for(const r of regs) byId[r.id]=rowToRec(r);
+        setRecords(Object.values(byId));
+      }
       if (emps?.length) {
         const map={...makeDefaultEmployees()};
         for(const e of emps) map[e.emp_no]={...map[e.emp_no],...rowToEmp(e)};
@@ -542,7 +544,7 @@ function AppMain({ session }) {
         const map={};
         for(const d of dias) map[d.fecha]={tipo:d.tipo};
         setSpecialDays(map);
-      } else { setSpecialDays({}); }
+      }
       if (corrs?.length) {
         const salMap={}, entMap={};
         for(const c of corrs){
