@@ -983,8 +983,33 @@ function AppMain({ session }) {
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:c.demora>0?"#c53030":"#c0c8d2"}}>{c.demora>0?minsToDisplay(c.demora):"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>{c.salTemprana>0?minsToDisplay(c.salTemprana):"—"}</td>
-                        <td style={{...S.td,fontSize:11,color:COL.textFaint,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.observacion||""}>
-                          {r.observacion||"—"}
+                        <td style={{...S.td,fontSize:11,padding:"4px 8px",maxWidth:140}}>
+                          {editingCell?.id===r.id&&editingCell?.field==="observacion"
+                            ? <input autoFocus
+                                defaultValue={r.observacion||""}
+                                onBlur={e=>{
+                                  const v=e.target.value.trim();
+                                  // Actualizar en records o manualRecords
+                                  if(r.manual){
+                                    setManualRecords(p=>p.map(x=>x.id===r.id?{...x,observacion:v||null}:x));
+                                  } else {
+                                    setRecords(p=>p.map(x=>x.id===r.id?{...x,observacion:v||null}:x));
+                                  }
+                                  sbUpsertSingle("registros",{id:r.id,observacion:v||null},"id");
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);if(e.key==="Enter")e.target.blur();}}
+                                style={{...S.inlineInput,fontSize:11,padding:"3px 6px",width:"100%"}}
+                              />
+                            : <span
+                                onClick={()=>setEditingCell({id:r.id,field:"observacion"})}
+                                title="Click para editar observación"
+                                style={{color:r.observacion?COL.textSub:"#d1d5db",cursor:"pointer",
+                                  borderBottom:"1px dashed #d1d5db",display:"block",
+                                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:130}}>
+                                {r.observacion||<span style={{fontSize:10,fontStyle:"italic"}}>agregar obs.</span>}
+                              </span>
+                          }
                         </td>
                         <td style={{...S.td,padding:"5px 8px",width:28}}>
                           <button onClick={()=>{
@@ -1334,11 +1359,17 @@ function AppMain({ session }) {
             });
           };
 
+          // Generar TODOS los días de cada mes que aparece en registros
+          // así se pueden marcar ausencias en días sin registro del reloj
+          const mesesConDatos = [...new Set(allDates.map(f=>f.slice(0,7)))].sort();
           const byMonth = {};
-          for (const f of allDates) {
-            const m = f.slice(0,7);
-            if (!byMonth[m]) byMonth[m] = [];
-            byMonth[m].push(f);
+          for (const month of mesesConDatos) {
+            const [y, m] = month.split("-").map(Number);
+            const diasEnMes = new Date(y, m, 0).getDate(); // último día del mes
+            byMonth[month] = [];
+            for (let d = 1; d <= diasEnMes; d++) {
+              byMonth[month].push(`${month}-${String(d).padStart(2,"0")}`);
+            }
           }
 
           const DIAS  = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
@@ -1350,7 +1381,9 @@ function AppMain({ session }) {
               <H2>Calendario — Días especiales</H2>
               <p style={S.body}>
                 Marcá los días como <strong style={{color:"#b45309"}}>Feriado</strong> (operarios trabajan hasta las 14:00, el horario de referencia cambia automáticamente) o como{" "}
-                <strong style={{color:"#c53030"}}>Día libre</strong> (sin registros esperados).
+                <strong style={{color:"#c53030"}}>Día libre</strong> (sin registros esperados),{" "}
+                <strong style={{color:"#7c3aed"}}>Ausencia justificada</strong> o{" "}
+                <strong style={{color:"#dc6b19"}}>Ausencia injustificada</strong>.
                 Los cambios afectan los cálculos en todas las pestañas.
               </p>
 
@@ -1418,20 +1451,44 @@ function AppMain({ session }) {
                               <div style={{fontSize:10,color:"#b45309",marginBottom:8}}>hasta 14:00</div>
                             )}
                             {isLibre && (
-                              <div style={{fontSize:10,background:"#fecaca",color:"#c53030",borderRadius:4,padding:"2px 7px",marginBottom:8,fontWeight:700,display:"inline-block"}}>
+                              <div style={{fontSize:10,background:"#fecaca",color:"#c53030",borderRadius:4,padding:"2px 7px",marginBottom:4,fontWeight:700,display:"inline-block"}}>
                                 DÍA LIBRE
                               </div>
                             )}
-                            <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                              <button onClick={()=>toggleDay(fecha,"feriado")}
-                                style={{fontSize:11,padding:"4px 8px",border:`1px solid ${isFeriado?"#f6d860":COL.border}`,borderRadius:6,cursor:"pointer",background:isFeriado?"#fde68a":"#fff",color:isFeriado?"#92400e":COL.textSub,fontFamily:SANS,fontWeight:isFeriado?700:400,textAlign:"left"}}>
-                                {isFeriado ? "✓ Feriado" : "+ Feriado"}
-                              </button>
-                              <button onClick={()=>toggleDay(fecha,"libre")}
-                                style={{fontSize:11,padding:"4px 8px",border:`1px solid ${isLibre?"#fca5a5":COL.border}`,borderRadius:6,cursor:"pointer",background:isLibre?"#fecaca":"#fff",color:isLibre?"#c53030":COL.textSub,fontFamily:SANS,fontWeight:isLibre?700:400,textAlign:"left"}}>
-                                {isLibre ? "✓ Día libre" : "+ Día libre"}
-                              </button>
-                            </div>
+                            {sp?.tipo==="aus_just" && (
+                              <div style={{fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"2px 7px",marginBottom:4,fontWeight:700,display:"inline-block"}}>
+                                AUS. JUST.
+                              </div>
+                            )}
+                            {sp?.tipo==="aus_injust" && (
+                              <div style={{fontSize:10,background:"#ffedd5",color:"#dc6b19",borderRadius:4,padding:"2px 7px",marginBottom:4,fontWeight:700,display:"inline-block"}}>
+                                AUS. INJUST.
+                              </div>
+                            )}
+                            {(() => {
+                              const isAusJust   = sp?.tipo === "aus_just";
+                              const isAusInjust = sp?.tipo === "aus_injust";
+                              return (
+                                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                                  <button onClick={()=>toggleDay(fecha,"feriado")}
+                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isFeriado?"#f6d860":COL.border}`,borderRadius:5,cursor:"pointer",background:isFeriado?"#fde68a":"#fff",color:isFeriado?"#92400e":COL.textSub,fontFamily:SANS,fontWeight:isFeriado?700:400,textAlign:"left"}}>
+                                    {isFeriado ? "✓ Feriado" : "+ Feriado"}
+                                  </button>
+                                  <button onClick={()=>toggleDay(fecha,"libre")}
+                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isLibre?"#fca5a5":COL.border}`,borderRadius:5,cursor:"pointer",background:isLibre?"#fecaca":"#fff",color:isLibre?"#c53030":COL.textSub,fontFamily:SANS,fontWeight:isLibre?700:400,textAlign:"left"}}>
+                                    {isLibre ? "✓ Día libre" : "+ Día libre"}
+                                  </button>
+                                  <button onClick={()=>toggleDay(fecha,"aus_just")}
+                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isAusJust?"#c4b5fd":COL.border}`,borderRadius:5,cursor:"pointer",background:isAusJust?"#ede9fe":"#fff",color:isAusJust?"#7c3aed":COL.textSub,fontFamily:SANS,fontWeight:isAusJust?700:400,textAlign:"left"}}>
+                                    {isAusJust ? "✓ Aus. just." : "+ Aus. just."}
+                                  </button>
+                                  <button onClick={()=>toggleDay(fecha,"aus_injust")}
+                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isAusInjust?"#fed7aa":COL.border}`,borderRadius:5,cursor:"pointer",background:isAusInjust?"#ffedd5":"#fff",color:isAusInjust?"#dc6b19":COL.textSub,fontFamily:SANS,fontWeight:isAusInjust?700:400,textAlign:"left"}}>
+                                    {isAusInjust ? "✓ Aus. injust." : "+ Aus. injust."}
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
