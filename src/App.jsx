@@ -512,7 +512,7 @@ function rowToEmp(r) {
 function diaToRow(fecha, tipo) { return { fecha, tipo }; }
 
 
-const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Resumen","Liquidación"];
+const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Resumen","Liquidación","Novedades"];
 
 function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
@@ -2399,6 +2399,92 @@ function AppMain({ session }) {
                     </div>
                   </div>
 
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {tab===8&&(()=>{
+          const activeEmps = empList.filter(e=>e.activo!==false);
+
+          // Para cada empleado activo: último ingreso (con fecha) y última salida (con fecha)
+          const filas = activeEmps.map(emp=>{
+            // registros del empleado, sin ausencias, con overrides manuales aplicados
+            const recs = allRecs
+              .filter(r=>r.empNo===emp.empNo && !r.ausencia)
+              .map(r=>{
+                const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
+                const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
+                return {...r, entrada, salida};
+              });
+
+            // último ingreso = fecha más reciente con entrada cargada
+            const conEntrada = recs.filter(r=>r.entrada).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+            const ult = conEntrada[0] || null;
+            // última salida = fecha más reciente con salida cargada
+            const conSalida = recs.filter(r=>r.salida).sort((a,b)=>b.fecha.localeCompare(a.fecha));
+            const ultSal = conSalida[0] || null;
+
+            return {
+              emp,
+              ingreso:      ult?.entrada || null,
+              fechaIngreso: ult?.fecha   || null,
+              salida:       ultSal?.salida || null,
+              fechaSalida:  ultSal?.fecha  || null,
+              algoCargado:  !!(ult || ultSal),
+            };
+          });
+
+          // ordenar: primero los que tienen ingreso más reciente
+          const conDatos = filas.filter(f=>f.algoCargado)
+            .sort((a,b)=>(b.fechaIngreso||"").localeCompare(a.fechaIngreso||""));
+          const sinDatos = filas.filter(f=>!f.algoCargado);
+
+          const fmtFecha = (f)=>{
+            if(!f) return "—";
+            const d = new Date(f+"T12:00:00");
+            const dd = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()];
+            return `${dd} ${f.slice(8,10)}/${f.slice(5,7)}`;
+          };
+
+          return (
+            <div>
+              <H2>Novedades</H2>
+              <p style={S.body}>
+                Último ingreso registrado y última salida de cada empleado activo.
+                La planilla se descarga al mediodía, por eso el ingreso suele ser de hoy y la salida del día anterior.
+              </p>
+
+              {records.length===0 ? (
+                <div style={S.infoBox}>
+                  <span style={{color:COL.textFaint,fontSize:13}}>No hay registros cargados todavía. Importá una planilla en la pestaña Importar.</span>
+                </div>
+              ) : (
+                <div style={S.tblWrap}>
+                  <table style={S.table}>
+                    <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
+                    <tbody>
+                      {[...conDatos,...sinDatos].map((f)=>{
+                        const TIPO = TIPO_CFG[f.emp.tipo||"operario"]||TIPO_CFG.operario;
+                        return (
+                          <tr key={f.emp.empNo}>
+                            <td style={{...S.td,textAlign:"left",fontFamily:MONO,color:COL.textFaint}}>{f.emp.empNo}</td>
+                            <td style={{...S.td,textAlign:"left"}}>
+                              <span style={{display:"inline-flex",alignItems:"center",gap:7}}>
+                                <span style={{width:7,height:7,borderRadius:"50%",background:TIPO.color,flexShrink:0}}/>
+                                {cap(f.emp.nombre)}
+                              </span>
+                            </td>
+                            <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaIngreso)}</td>
+                            <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.ingreso?"#276749":COL.textFaint}}>{f.ingreso||"—"}</td>
+                            <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaSalida)}</td>
+                            <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.salida?"#1e5fa8":COL.textFaint}}>{f.salida||"—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
