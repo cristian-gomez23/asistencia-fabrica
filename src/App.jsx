@@ -360,6 +360,24 @@ function exportLiqPDF(d) {
   renderPDF();
 }
 
+/* ─── Exportar a Excel ───────────────────────────────────────────────────── */
+// rows: array de objetos; el orden de columnas lo da `headers` (array de [key,label])
+function exportXLSX(rows, headers, sheetName, fileName) {
+  const aoa = [headers.map(h=>h[1])];
+  for (const r of rows) aoa.push(headers.map(h=>{
+    const v = r[h[0]];
+    return v === null || v === undefined ? "" : v;
+  }));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // ancho de columnas automático según contenido
+  ws["!cols"] = headers.map((h,i)=>{
+    const maxLen = Math.max(h[1].length, ...aoa.slice(1).map(row=>String(row[i]??"").length));
+    return { wch: Math.min(Math.max(maxLen+2, 8), 40) };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0,31));
+  XLSX.writeFile(wb, fileName);
+}
 
 /* ─── Supabase ───────────────────────────────────────────────────────────── */
 const SB_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -1845,13 +1863,28 @@ function AppMain({ session }) {
               const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
               const diasFinde       = findeSel.size;
 
-              const importeExtras    = valorHoraExt  * horasExtra;
+              // Horas extra manuales (mismo cálculo que Liquidación)
+              const horasExtraManualHs  = parseFloat(p.horasExtraManualHs  || 0);
+              const horasExtraManualImp = parseFloat(p.horasExtraManualImp || 0);
+              const importeExtraManual  = horasExtraManualImp > 0
+                ? horasExtraManualImp
+                : horasExtraManualHs * valorHoraExt;
+
+              const importeExtras    = valorHoraExt * horasExtra + importeExtraManual;
               const importeFeriados  = valorDia      * feriados;
               const importeVacacion  = valorDia      * vacaciones;
               const importeFinde     = valorDiaFinde * diasFinde;
               const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
-              const descDemoras      = (valorHora / 4) * fraccionesDem;
-              const descSalTemp      = valorHora * horasSalTemp;
+
+              // Descuentos: respetar overrides manuales de Liquidación (vínculo bidireccional)
+              const descDemorasCalc = (valorHora / 4) * fraccionesDem;
+              const descSalTempCalc = valorHora * horasSalTemp;
+              const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
+                ? parseFloat(p.descDemorasManual) : null;
+              const descSalTempManual = p.descSalTempManual !== undefined && p.descSalTempManual !== ""
+                ? parseFloat(p.descSalTempManual) : null;
+              const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
+              const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
               const totalDesc        = descDemoras + descSalTemp;
               const subtotal         = sueldoBasico + totalAdicionales - totalDesc - adelanto;
 
@@ -1883,8 +1916,36 @@ function AppMain({ session }) {
 
           return (
             <div style={{maxWidth:1100}}>
-              <H2>Resumen de liquidaciones</H2>
-              <p style={S.body}>Resumen calculado a partir de los datos de Circular y la asistencia del período configurado en Liquidación.</p>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <H2>Resumen de liquidaciones</H2>
+                  <p style={S.body}>Resumen calculado a partir de los datos de Circular y la asistencia del período configurado en Liquidación.</p>
+                </div>
+                {filas.length>0&&(
+                  <button onClick={()=>{
+                    const headers = [
+                      ["empNo","N°"],["nombre","Empleado"],["area","Área"],["ingreso","Ingreso"],
+                      ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],
+                      ["totalDesc","Desc. hs/días"],["adelanto","Adelantos"],["subtotal","Subtotal"],
+                    ];
+                    const rows = filas.map(f=>({
+                      empNo:f.emp.empNo, nombre:f.nombre, area:f.area==="—"?"":f.area,
+                      ingreso:f.ingreso?new Date(f.ingreso+"T12:00:00").toLocaleDateString("es-AR"):"",
+                      sueldoBasico:Math.round(f.sueldoBasico),
+                      totalAdicionales:Math.round(f.totalAdicionales),
+                      totalDesc:Math.round(f.totalDesc),
+                      adelanto:Math.round(f.adelanto),
+                      subtotal:Math.round(f.subtotal),
+                    }));
+                    rows.push({empNo:"",nombre:`TOTAL (${filas.length})`,area:"",ingreso:"",
+                      sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),
+                      totalDesc:Math.round(totDesc),adelanto:Math.round(totAdelanto),subtotal:Math.round(totSubtotal)});
+                    exportXLSX(rows, headers, "Resumen", "resumen_liquidaciones.xlsx");
+                  }} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                  </button>
+                )}
+              </div>
 
               {filas.length === 0 && (
                 <div style={{padding:"60px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,
@@ -2408,38 +2469,50 @@ function AppMain({ session }) {
         {tab===8&&(()=>{
           const activeEmps = empList.filter(e=>e.activo!==false);
 
-          // Para cada empleado activo: último ingreso (con fecha) y última salida (con fecha)
-          const filas = activeEmps.map(emp=>{
-            // registros del empleado, sin ausencias, con overrides manuales aplicados
-            const recs = allRecs
-              .filter(r=>r.empNo===emp.empNo && !r.ausencia)
-              .map(r=>{
-                const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
-                const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
-                return {...r, entrada, salida};
+          // Último día cargado en el sistema = fecha máxima entre todos los registros
+          const ultimoDia = allRecs.length
+            ? allRecs.reduce((max,r)=> r.fecha>max ? r.fecha : max, allRecs[0].fecha)
+            : null;
+
+          // helper: registros de un empleado, sin ausencias, con overrides manuales
+          const recsDe = (empNo)=> allRecs
+            .filter(r=>r.empNo===empNo && !r.ausencia)
+            .map(r=>{
+              const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
+              const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
+              return {...r, entrada, salida};
+            });
+
+          // CON marca en el último día
+          const conMarca = [];
+          // SIN marca ese día (mostramos su última marca histórica)
+          const sinMarca = [];
+
+          for (const emp of activeEmps) {
+            const recs = recsDe(emp.empNo);
+            const recDelDia = recs.find(r=>r.fecha===ultimoDia && (r.entrada||r.salida));
+            if (recDelDia) {
+              conMarca.push({
+                emp,
+                ingreso: recDelDia.entrada || null,
+                salida:  recDelDia.salida  || null,
+                fecha:   ultimoDia,
               });
+            } else {
+              // su registro más reciente con algo cargado
+              const ult = recs.filter(r=>r.entrada||r.salida)
+                .sort((a,b)=>b.fecha.localeCompare(a.fecha))[0] || null;
+              sinMarca.push({
+                emp,
+                ingreso: ult?.entrada || null,
+                salida:  ult?.salida  || null,
+                fecha:   ult?.fecha   || null,
+              });
+            }
+          }
 
-            // último ingreso = fecha más reciente con entrada cargada
-            const conEntrada = recs.filter(r=>r.entrada).sort((a,b)=>b.fecha.localeCompare(a.fecha));
-            const ult = conEntrada[0] || null;
-            // última salida = fecha más reciente con salida cargada
-            const conSalida = recs.filter(r=>r.salida).sort((a,b)=>b.fecha.localeCompare(a.fecha));
-            const ultSal = conSalida[0] || null;
-
-            return {
-              emp,
-              ingreso:      ult?.entrada || null,
-              fechaIngreso: ult?.fecha   || null,
-              salida:       ultSal?.salida || null,
-              fechaSalida:  ultSal?.fecha  || null,
-              algoCargado:  !!(ult || ultSal),
-            };
-          });
-
-          // ordenar: primero los que tienen ingreso más reciente
-          const conDatos = filas.filter(f=>f.algoCargado)
-            .sort((a,b)=>(b.fechaIngreso||"").localeCompare(a.fechaIngreso||""));
-          const sinDatos = filas.filter(f=>!f.algoCargado);
+          conMarca.sort((a,b)=>a.emp.empNo-b.emp.empNo);
+          sinMarca.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")||a.emp.empNo-b.emp.empNo);
 
           const fmtFecha = (f)=>{
             if(!f) return "—";
@@ -2448,44 +2521,91 @@ function AppMain({ session }) {
             return `${dd} ${f.slice(8,10)}/${f.slice(5,7)}`;
           };
 
+          const exportarNovedades = ()=>{
+            const headers = [
+              ["empNo","N°"],["nombre","Nombre"],["estado","Estado"],
+              ["fecha","Fecha"],["ingreso","Ingreso"],["salida","Salida"],
+            ];
+            const rows = [
+              ...conMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Presente",
+                fecha:f.fecha||"",ingreso:f.ingreso||"",salida:f.salida||""})),
+              ...sinMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Sin marca",
+                fecha:f.fecha||"",ingreso:f.ingreso||"",salida:f.salida||""})),
+            ];
+            exportXLSX(rows, headers, "Novedades", `novedades_${ultimoDia||"sd"}.xlsx`);
+          };
+
+          const RowNov = (f, faded)=>{
+            const TIPO = TIPO_CFG[f.emp.tipo||"operario"]||TIPO_CFG.operario;
+            return (
+              <tr key={f.emp.empNo}>
+                <td style={{...S.td,textAlign:"left",fontFamily:MONO,color:COL.textFaint}}>{f.emp.empNo}</td>
+                <td style={{...S.td,textAlign:"left"}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:7}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:TIPO.color,flexShrink:0}}/>
+                    {cap(f.emp.nombre)}
+                  </span>
+                </td>
+                <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fecha)}</td>
+                <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.ingreso?(faded?COL.textFaint:"#276749"):COL.textFaint}}>{f.ingreso||"—"}</td>
+                <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.salida?(faded?COL.textFaint:"#1e5fa8"):COL.textFaint}}>{f.salida||"—"}</td>
+              </tr>
+            );
+          };
+
           return (
             <div>
-              <H2>Novedades</H2>
-              <p style={S.body}>
-                Último ingreso registrado y última salida de cada empleado activo.
-                La planilla se descarga al mediodía, por eso el ingreso suele ser de hoy y la salida del día anterior.
-              </p>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <H2>Novedades</H2>
+                  <p style={S.body}>
+                    Ingreso y salida del último día cargado{ultimoDia?<> (<strong>{fmtFecha(ultimoDia)}</strong>)</>:""}.
+                    Como la planilla se descarga al mediodía, el ingreso es de ese día y la salida suele ser de la jornada anterior del mismo registro.
+                  </p>
+                </div>
+                {records.length>0&&(
+                  <button onClick={exportarNovedades} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                  </button>
+                )}
+              </div>
 
               {records.length===0 ? (
                 <div style={S.infoBox}>
                   <span style={{color:COL.textFaint,fontSize:13}}>No hay registros cargados todavía. Importá una planilla en la pestaña Importar.</span>
                 </div>
               ) : (
-                <div style={S.tblWrap}>
-                  <table style={S.table}>
-                    <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
-                    <tbody>
-                      {[...conDatos,...sinDatos].map((f)=>{
-                        const TIPO = TIPO_CFG[f.emp.tipo||"operario"]||TIPO_CFG.operario;
-                        return (
-                          <tr key={f.emp.empNo}>
-                            <td style={{...S.td,textAlign:"left",fontFamily:MONO,color:COL.textFaint}}>{f.emp.empNo}</td>
-                            <td style={{...S.td,textAlign:"left"}}>
-                              <span style={{display:"inline-flex",alignItems:"center",gap:7}}>
-                                <span style={{width:7,height:7,borderRadius:"50%",background:TIPO.color,flexShrink:0}}/>
-                                {cap(f.emp.nombre)}
-                              </span>
-                            </td>
-                            <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaIngreso)}</td>
-                            <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.ingreso?"#276749":COL.textFaint}}>{f.ingreso||"—"}</td>
-                            <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaSalida)}</td>
-                            <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.salida?"#1e5fa8":COL.textFaint}}>{f.salida||"—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div style={{fontSize:12,color:COL.textSub,fontWeight:600,margin:"4px 0 8px"}}>
+                    Presentes el {fmtFecha(ultimoDia)} · {conMarca.length}
+                  </div>
+                  <div style={S.tblWrap}>
+                    <table style={S.table}>
+                      <THead cols={["N°","Nombre","Fecha","Ingreso","Salida"]}/>
+                      <tbody>
+                        {conMarca.length>0
+                          ? conMarca.map(f=>RowNov(f,false))
+                          : <tr><td colSpan={5} style={{...S.td,color:COL.textFaint,padding:"18px"}}>Nadie marcó ese día.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {sinMarca.length>0&&(
+                    <>
+                      <div style={{fontSize:12,color:"#b45309",fontWeight:600,margin:"22px 0 8px"}}>
+                        Sin marca el {fmtFecha(ultimoDia)} · {sinMarca.length} (se muestra su última marca registrada)
+                      </div>
+                      <div style={{...S.tblWrap,opacity:0.92}}>
+                        <table style={S.table}>
+                          <THead cols={["N°","Nombre","Última marca","Ingreso","Salida"]}/>
+                          <tbody>
+                            {sinMarca.map(f=>RowNov(f,true))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
           );
