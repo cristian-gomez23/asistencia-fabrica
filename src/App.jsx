@@ -2492,27 +2492,37 @@ function AppMain({ session }) {
             const recs = recsDe(emp.empNo);
             const recDelDia = recs.find(r=>r.fecha===ultimoDia && (r.entrada||r.salida));
             if (recDelDia) {
+              // Salida = del registro ANTERIOR con salida (día hábil previo: 28, 26, etc.)
+              const salPrev = recs
+                .filter(r=>r.fecha < ultimoDia && r.salida)
+                .sort((a,b)=>b.fecha.localeCompare(a.fecha))[0] || null;
               conMarca.push({
                 emp,
-                ingreso: recDelDia.entrada || null,
-                salida:  recDelDia.salida  || null,
-                fecha:   ultimoDia,
+                ingreso:     recDelDia.entrada || null,
+                fechaIng:    ultimoDia,
+                salida:      salPrev?.salida || null,
+                fechaSal:    salPrev?.fecha  || null,
               });
             } else {
               // su registro más reciente con algo cargado
               const ult = recs.filter(r=>r.entrada||r.salida)
                 .sort((a,b)=>b.fecha.localeCompare(a.fecha))[0] || null;
+              // y la salida del registro anterior a ese
+              const salPrev = ult ? (recs
+                .filter(r=>r.fecha < ult.fecha && r.salida)
+                .sort((a,b)=>b.fecha.localeCompare(a.fecha))[0] || null) : null;
               sinMarca.push({
                 emp,
-                ingreso: ult?.entrada || null,
-                salida:  ult?.salida  || null,
-                fecha:   ult?.fecha   || null,
+                ingreso:  ult?.entrada || null,
+                fechaIng: ult?.fecha   || null,
+                salida:   (ult?.salida) || (salPrev?.salida) || null,
+                fechaSal: (ult?.salida ? ult.fecha : salPrev?.fecha) || null,
               });
             }
           }
 
           conMarca.sort((a,b)=>a.emp.empNo-b.emp.empNo);
-          sinMarca.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")||a.emp.empNo-b.emp.empNo);
+          sinMarca.sort((a,b)=>(b.fechaIng||"").localeCompare(a.fechaIng||"")||a.emp.empNo-b.emp.empNo);
 
           const fmtFecha = (f)=>{
             if(!f) return "—";
@@ -2524,13 +2534,14 @@ function AppMain({ session }) {
           const exportarNovedades = ()=>{
             const headers = [
               ["empNo","N°"],["nombre","Nombre"],["estado","Estado"],
-              ["fecha","Fecha"],["ingreso","Ingreso"],["salida","Salida"],
+              ["fechaIng","Fecha ingreso"],["ingreso","Ingreso"],
+              ["fechaSal","Fecha salida"],["salida","Salida"],
             ];
             const rows = [
               ...conMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Presente",
-                fecha:f.fecha||"",ingreso:f.ingreso||"",salida:f.salida||""})),
+                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||""})),
               ...sinMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Sin marca",
-                fecha:f.fecha||"",ingreso:f.ingreso||"",salida:f.salida||""})),
+                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||""})),
             ];
             exportXLSX(rows, headers, "Novedades", `novedades_${ultimoDia||"sd"}.xlsx`);
           };
@@ -2546,8 +2557,9 @@ function AppMain({ session }) {
                     {cap(f.emp.nombre)}
                   </span>
                 </td>
-                <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fecha)}</td>
+                <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaIng)}</td>
                 <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.ingreso?(faded?COL.textFaint:"#276749"):COL.textFaint}}>{f.ingreso||"—"}</td>
+                <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaSal)}</td>
                 <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.salida?(faded?COL.textFaint:"#1e5fa8"):COL.textFaint}}>{f.salida||"—"}</td>
               </tr>
             );
@@ -2559,8 +2571,8 @@ function AppMain({ session }) {
                 <div>
                   <H2>Novedades</H2>
                   <p style={S.body}>
-                    Ingreso y salida del último día cargado{ultimoDia?<> (<strong>{fmtFecha(ultimoDia)}</strong>)</>:""}.
-                    Como la planilla se descarga al mediodía, el ingreso es de ese día y la salida suele ser de la jornada anterior del mismo registro.
+                    Ingreso del último día cargado{ultimoDia?<> (<strong>{fmtFecha(ultimoDia)}</strong>)</>:""} y la última salida registrada antes de ese día.
+                    Como la planilla se descarga al mediodía, el ingreso es de ese día y la salida corresponde al día hábil anterior.
                   </p>
                 </div>
                 {records.length>0&&(
@@ -2581,11 +2593,11 @@ function AppMain({ session }) {
                   </div>
                   <div style={S.tblWrap}>
                     <table style={S.table}>
-                      <THead cols={["N°","Nombre","Fecha","Ingreso","Salida"]}/>
+                      <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
                       <tbody>
                         {conMarca.length>0
                           ? conMarca.map(f=>RowNov(f,false))
-                          : <tr><td colSpan={5} style={{...S.td,color:COL.textFaint,padding:"18px"}}>Nadie marcó ese día.</td></tr>}
+                          : <tr><td colSpan={6} style={{...S.td,color:COL.textFaint,padding:"18px"}}>Nadie marcó ese día.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -2597,7 +2609,7 @@ function AppMain({ session }) {
                       </div>
                       <div style={{...S.tblWrap,opacity:0.92}}>
                         <table style={S.table}>
-                          <THead cols={["N°","Nombre","Última marca","Ingreso","Salida"]}/>
+                          <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
                           <tbody>
                             {sinMarca.map(f=>RowNov(f,true))}
                           </tbody>
