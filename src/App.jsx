@@ -246,7 +246,7 @@ function exportLiqPDF(d) {
   const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt,
     importeExtras, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
-    descDemoras, horasSalTemp, descSalTemp, totalDescuentos, adelanto,
+    descDemoras, horasSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
     totalACobrar, diasTrabajados, nombreDisplay, fmt } = d;
 
   const nombre = selEmp.nombre.toUpperCase();
@@ -338,7 +338,12 @@ function exportLiqPDF(d) {
           ${descDemoras>0?row("Llegadas tarde (fracc. de 15 min)",fraccionesDemora,`${fmt(valorHora)}/4`,fmt(descDemoras),"detail","#c53030",true):row("Llegadas tarde (fracc. de 15 min)","—","—","—","muted","",true)}
           ${descSalTemp>0?row("Retiros anticipados (x hora)",horasSalTemp,fmt(valorHora),fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (x hora)","—","—","—","muted","",true)}
           ${row("Total descuentos","","",totalDescuentos>0?fmt(totalDescuentos):"—","sub",totalDescuentos>0?"#c53030":"")}
-          ${adelanto>0?row("Adelanto","—","—",fmt(adelanto),"sub","#b45309"):row("Adelanto","—","—","—","muted")}
+          ${(adelantos||[]).filter(a=>parseFloat(a.monto)>0).length
+            ? row("ADELANTOS","","","","section","#b45309")
+              + (adelantos||[]).filter(a=>parseFloat(a.monto)>0)
+                  .map(a=>row(a.desc||"Adelanto","","",fmt(parseFloat(a.monto)),"detail","#b45309",true)).join("")
+              + row("Total adelantos","","",fmt(adelanto),"sub","#b45309")
+            : row("Adelantos","—","—","—","muted")}
           <tr class="total-gold">
             <td colspan="3" style="text-align:right;padding-right:16px;letter-spacing:0.04em">TOTAL A COBRAR — ${periodo||""}</td>
             <td>${totalACobrar>0?fmt(totalACobrar):"—"}</td>
@@ -1840,7 +1845,9 @@ function AppMain({ session }) {
               const valorDia      = parseFloat(p.valorDia      || 0);
               const valorHora     = parseFloat(p.valorHora     || 0);
               const valorDiaFinde = parseFloat(p.valorDiaFinde || 0);
-              const adelanto      = parseFloat(p.adelanto      || 0);
+              const adelanto      = (Array.isArray(p.adelantos)
+                ? p.adelantos.reduce((s,a)=>s+(parseFloat(a.monto)||0),0)
+                : parseFloat(p.adelanto || 0));
               const feriados      = parseFloat(p.feriados      || 0);
               const sac           = parseFloat(p.sac           || 0);
               const vacaciones    = parseFloat(p.vacaciones    || 0);
@@ -2070,7 +2077,11 @@ function AppMain({ session }) {
           const valorHora     = parseFloat(p.valorHora     || 0);
           const valorHoraExt  = parseFloat(p.valorHoraExt  || 0);
           const valorDiaFinde = parseFloat(p.valorDiaFinde || 0);
-          const adelanto      = parseFloat(p.adelanto      || 0);
+          // Adelantos: lista de líneas {desc, monto}. Compat: si existe el viejo p.adelanto numérico y no hay lista, lo migra.
+          const adelantos = Array.isArray(p.adelantos)
+            ? p.adelantos
+            : (parseFloat(p.adelanto||0) > 0 ? [{desc:"Adelanto", monto:String(parseFloat(p.adelanto))}] : []);
+          const adelanto      = adelantos.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
           const feriados      = parseFloat(p.feriados      || 0);
           const sac           = parseFloat(p.sac           || 0);
           const vacaciones    = parseFloat(p.vacaciones    || 0);
@@ -2171,7 +2182,7 @@ function AppMain({ session }) {
                   </div>
                 </div>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -2213,7 +2224,54 @@ function AppMain({ session }) {
                       <FieldInput label="SAC"                      value={p.sac||""}        onChange={v=>setP("sac",v)}        note="importe directo" />
                       <FieldInput label="Vacaciones (días)"        value={p.vacaciones||""} onChange={v=>setP("vacaciones",v)} prefix="" note="× valor día" />
                       <FieldInput label="Feriados (días)"          value={p.feriados||""}   onChange={v=>setP("feriados",v)}   prefix="" note="× valor día" />
-                      <FieldInput label="Adelanto"                 value={p.adelanto||""}   onChange={v=>setP("adelanto",v)} />
+
+                      {/* Adelantos — líneas de detalle */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                          <div style={{fontSize:11,color:"#b45309",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase"}}>
+                            Adelantos
+                          </div>
+                          <button
+                            onClick={()=>setP("adelantos",[...adelantos,{desc:"",monto:""}])}
+                            style={{...S.btnS,background:"#b45309",display:"flex",alignItems:"center",gap:5,padding:"4px 11px"}}>
+                            <span style={{fontSize:14,lineHeight:1}}>+</span> Agregar
+                          </button>
+                        </div>
+                        {adelantos.length===0 ? (
+                          <div style={{fontSize:12,color:COL.textFaint,padding:"4px 0 2px"}}>Sin adelantos cargados.</div>
+                        ) : (
+                          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                            {adelantos.map((a,idx)=>(
+                              <div key={idx} style={{display:"flex",alignItems:"center",gap:8}}>
+                                <input
+                                  type="text"
+                                  value={a.desc}
+                                  onChange={e=>{const arr=adelantos.map((x,i)=>i===idx?{...x,desc:e.target.value}:x);setP("adelantos",arr);}}
+                                  placeholder="Descripción (ej: 3/7 auto)"
+                                  style={{...INPUT_STYLE,flex:1,padding:"6px 10px",fontFamily:SANS,fontSize:13}}
+                                />
+                                <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                                <input
+                                  type="number" min="0" step="any" inputMode="decimal"
+                                  value={a.monto}
+                                  onChange={e=>{const arr=adelantos.map((x,i)=>i===idx?{...x,monto:e.target.value}:x);setP("adelantos",arr);}}
+                                  placeholder="0"
+                                  style={{...INPUT_STYLE,width:130,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                                />
+                                <button
+                                  onClick={()=>setP("adelantos",adelantos.filter((_,i)=>i!==idx))}
+                                  title="Quitar"
+                                  style={{background:"none",border:"none",cursor:"pointer",color:COL.textFaint,fontSize:16,lineHeight:1,padding:"0 4px"}}>×</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {adelanto>0&&(
+                          <div style={{marginTop:9,fontSize:12,color:"#b45309",fontFamily:MONO,fontWeight:600,textAlign:"right"}}>
+                            Total adelantos: ${Math.round(adelanto).toLocaleString("es-AR")}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Horas extra manuales — fuera del reloj */}
                       <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
@@ -2446,7 +2504,11 @@ function AppMain({ session }) {
                           <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={horasSalTempDisp} valor={descSalTemp?fmt(valorHora):"—"} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
                           <LiqRow label="Total descuentos" cantidad="" valor="" importe={totalDescuentos?fmt(totalDescuentos):"—"} bold color="#c53030" separator />
 
-                          <LiqRow label="Adelanto" cantidad="" valor="" importe={adelanto?fmt(adelanto):"—"} bold color="#b45309" separator />
+                          <LiqRow label="Adelantos" cantidad="" valor="" importe="" bold color="#b45309" separator />
+                          {adelantos.filter(a=>parseFloat(a.monto)>0).map((a,i)=>(
+                            <LiqRow key={i} indent label={a.desc||"Adelanto"} cantidad="" valor="" importe={fmt(parseFloat(a.monto))} color="#b45309" />
+                          ))}
+                          <LiqRow label="Total adelantos" cantidad="" valor="" importe={adelanto?fmt(adelanto):"—"} bold color="#b45309" />
 
                           {/* Total */}
                           <tr style={{background:"#f0f4fa"}}>
