@@ -201,6 +201,46 @@ const COL = {
 const SANS = "'DM Sans', system-ui, sans-serif";
 const MONO = "'DM Mono', 'Courier New', monospace";
 
+/* ─── Inputs estables (definidos a nivel módulo para no perder el foco) ─────── */
+const INPUT_STYLE = {
+  border:`1px solid ${COL.border2}`, borderRadius:8, outline:"none",
+  background:"#fff", color:COL.text,
+};
+
+function FieldInput({ label, prefix="$", note="", value, onChange }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+      <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>{label}</label>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        {prefix&&<span style={{fontSize:12,color:COL.textFaint}}>{prefix}</span>}
+        <input
+          type="number" min="0" step="any" inputMode="decimal"
+          value={value}
+          onChange={e=>onChange(e.target.value)}
+          placeholder="0"
+          style={{...INPUT_STYLE,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+        />
+      </div>
+      {note&&<span style={{fontSize:11,color:COL.textFaint}}>{note}</span>}
+    </div>
+  );
+}
+
+// Convierte horas decimales (ej 2.75) a {h:2, m:45}
+function decimalToHM(dec) {
+  const v = parseFloat(dec);
+  if (!v || isNaN(v)) return { h:"", m:"" };
+  const totalMin = Math.round(v * 60);
+  return { h:String(Math.floor(totalMin/60)), m:String(totalMin%60) };
+}
+// Convierte horas y minutos a horas decimales (ej 2,45 -> 2.75)
+function hmToDecimal(h, m) {
+  const hh = parseInt(h,10) || 0;
+  const mm = parseInt(m,10) || 0;
+  if (!hh && !mm) return "";
+  return ((hh*60 + mm) / 60).toString();
+}
+
 /* ─── PDF export ─────────────────────────────────────────────────────────── */
 function exportLiqPDF(d) {
   const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt,
@@ -295,8 +335,8 @@ function exportLiqPDF(d) {
           ${row("Subtotal adicionales","","",fmt(totalAdicionales),"sub")}
           ${row("SUELDO + ADICIONALES","","",fmt(subtotal),"total-line","#1a3a6b")}
           ${row("DESCUENTOS","","","","section")}
-          ${fraccionesDemora>0?row("Llegadas tarde (fracc. de 15 min)",fraccionesDemora,`${fmt(valorHora)}/4`,fmt(descDemoras),"detail","#c53030",true):row("Llegadas tarde (fracc. de 15 min)","—","—","—","muted","",true)}
-          ${horasSalTemp>0?row("Retiros anticipados (x hora)",horasSalTemp,fmt(valorHora),fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (x hora)","—","—","—","muted","",true)}
+          ${descDemoras>0?row("Llegadas tarde (fracc. de 15 min)",fraccionesDemora,`${fmt(valorHora)}/4`,fmt(descDemoras),"detail","#c53030",true):row("Llegadas tarde (fracc. de 15 min)","—","—","—","muted","",true)}
+          ${descSalTemp>0?row("Retiros anticipados (x hora)",horasSalTemp,fmt(valorHora),fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (x hora)","—","—","—","muted","",true)}
           ${row("Total descuentos","","",totalDescuentos>0?fmt(totalDescuentos):"—","sub",totalDescuentos>0?"#c53030":"")}
           ${adelanto>0?row("Adelanto","—","—",fmt(adelanto),"sub","#b45309"):row("Adelanto","—","—","—","muted")}
           <tr class="total-gold">
@@ -1984,9 +2024,9 @@ function AppMain({ session }) {
             ? horasExtraManualImp
             : horasExtraManualHs * valorHoraExt;
           const horasExtraManualDisplay = horasExtraManualHs > 0
-            ? `${horasExtraManualHs}h`
+            ? minsToDisplay(Math.round(horasExtraManualHs*60))
             : horasExtraManualImp > 0 && valorHoraExt > 0
-            ? `${(horasExtraManualImp/valorHoraExt).toFixed(2)}h`
+            ? minsToDisplay(Math.round((horasExtraManualImp/valorHoraExt)*60))
             : "—";
 
           // Descuentos — pueden sobreescribirse manualmente
@@ -2001,6 +2041,10 @@ function AppMain({ session }) {
           const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
           const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
 
+          // Cantidades a mostrar: si el descuento se borró (importe 0), no mostrar unidades
+          const fraccionesDemoraDisp = descDemoras > 0 ? fraccionesDemora : "—";
+          const horasSalTempDisp     = descSalTemp > 0 ? horasSalTemp     : "—";
+
           // Calculations — básico manda, adicionales son extras sobre él
           const importeSueldo    = sueldoBasico;
           const importeExtras    = valorHoraExt * horasExtra + importeExtraManual;
@@ -2014,23 +2058,6 @@ function AppMain({ session }) {
 
           const fmt = (n) => n === 0 ? "—" : `$${Math.round(n).toLocaleString("es-AR")}`;
           const fmtN = (n) => n === 0 ? "—" : Math.round(n).toLocaleString("es-AR");
-
-          const Field = ({label, field, prefix="$", note=""}) => (
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>{label}</label>
-              <div style={{display:"flex",alignItems:"center",gap:4}}>
-                {prefix&&<span style={{fontSize:12,color:COL.textFaint}}>{prefix}</span>}
-                <input
-                  type="number" min="0" step="any"
-                  value={p[field]||""}
-                  onChange={e=>setP(field, e.target.value)}
-                  placeholder="0"
-                  style={{...S.sInput,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
-                />
-              </div>
-              {note&&<span style={{fontSize:11,color:COL.textFaint}}>{note}</span>}
-            </div>
-          );
 
           const LiqRow = ({label,cantidad,valor,importe,bold,color,indent,separator}) => (
             <>
@@ -2113,41 +2140,60 @@ function AppMain({ session }) {
                           style={{...S.sInput,flex:1,padding:"6px 10px",fontSize:13}}
                         />
                       </div>
-                      <Field label="Sueldo básico"            field="sueldoBasico" />
-                      <Field label="Valor día"                field="valorDia" />
-                      <Field label="Valor hora"               field="valorHora" />
-                      <Field label="Valor hora extra"         field="valorHoraExt" />
-                      <Field label="Adicional día finde/especial" field="valorDiaFinde" note="por día trabajado en finde" />
+                      <FieldInput label="Sueldo básico"            value={p.sueldoBasico||""}  onChange={v=>setP("sueldoBasico",v)} />
+                      <FieldInput label="Valor día"                value={p.valorDia||""}      onChange={v=>setP("valorDia",v)} />
+                      <FieldInput label="Valor hora"               value={p.valorHora||""}     onChange={v=>setP("valorHora",v)} />
+                      <FieldInput label="Valor hora extra"         value={p.valorHoraExt||""}  onChange={v=>setP("valorHoraExt",v)} />
+                      <FieldInput label="Adicional día finde/especial" value={p.valorDiaFinde||""} onChange={v=>setP("valorDiaFinde",v)} note="por día trabajado en finde" />
                     </div>
 
                     <div style={{background:COL.surface,border:`1px solid ${COL.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
                       <div style={{fontSize:11,color:COL.textFaint,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:14}}>Adicionales manuales</div>
-                      <Field label="SAC"                      field="sac"       note="importe directo" />
-                      <Field label="Vacaciones (días)"        field="vacaciones" prefix="" note="× valor día" />
-                      <Field label="Feriados (días)"          field="feriados"  prefix="" note="× valor día" />
-                      <Field label="Adelanto"                 field="adelanto" />
+                      <FieldInput label="SAC"                      value={p.sac||""}        onChange={v=>setP("sac",v)}        note="importe directo" />
+                      <FieldInput label="Vacaciones (días)"        value={p.vacaciones||""} onChange={v=>setP("vacaciones",v)} prefix="" note="× valor día" />
+                      <FieldInput label="Feriados (días)"          value={p.feriados||""}   onChange={v=>setP("feriados",v)}   prefix="" note="× valor día" />
+                      <FieldInput label="Adelanto"                 value={p.adelanto||""}   onChange={v=>setP("adelanto",v)} />
 
                       {/* Horas extra manuales — fuera del reloj */}
                       <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
                         <div style={{fontSize:11,color:"#276749",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
                           Hs. extra fuera del reloj
                         </div>
+                        {(()=>{
+                          const { h: curH, m: curM } = decimalToHM(p.horasExtraManualHs);
+                          const setHM = (h, m) => {
+                            const dec = hmToDecimal(h, m);
+                            setP("horasExtraManualHs", dec);
+                            setP("horasExtraManualImp", dec && valorHoraExt ? (parseFloat(dec)*valorHoraExt).toFixed(2) : "");
+                          };
+                          return (
                         <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-                          <div style={{flex:1,minWidth:120}}>
+                          <div style={{minWidth:80}}>
                             <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Horas</div>
                             <div style={{display:"flex",alignItems:"center",gap:4}}>
-                              <input type="number" min="0" step="0.25"
-                                value={p.horasExtraManualHs||""}
+                              <input type="number" min="0" step="1" inputMode="numeric"
+                                value={curH}
+                                onChange={e=>setHM(e.target.value, curM)}
+                                placeholder="0"
+                                style={{...S.sInput,width:64,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                              />
+                              <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>h</span>
+                            </div>
+                          </div>
+                          <div style={{minWidth:80}}>
+                            <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Minutos</div>
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              <input type="number" min="0" max="59" step="1" inputMode="numeric"
+                                value={curM}
                                 onChange={e=>{
-                                  const hs = e.target.value;
-                                  const imp = hs && valorHoraExt ? (parseFloat(hs)*valorHoraExt).toFixed(2) : "";
-                                  setP("horasExtraManualHs", hs);
-                                  if(hs) setP("horasExtraManualImp", imp);
+                                  let m = e.target.value;
+                                  if(m !== "" && parseInt(m,10) > 59) m = "59";
+                                  setHM(curH, m);
                                 }}
                                 placeholder="0"
-                                style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                                style={{...S.sInput,width:64,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
                               />
-                              <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>hs</span>
+                              <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>min</span>
                             </div>
                           </div>
                           <div style={{fontSize:13,color:COL.textFaint,paddingBottom:8}}>↔</div>
@@ -2155,13 +2201,13 @@ function AppMain({ session }) {
                             <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Importe</div>
                             <div style={{display:"flex",alignItems:"center",gap:4}}>
                               <span style={{fontSize:12,color:COL.textFaint}}>$</span>
-                              <input type="number" min="0" step="any"
+                              <input type="number" min="0" step="any" inputMode="decimal"
                                 value={p.horasExtraManualImp||""}
                                 onChange={e=>{
                                   const imp = e.target.value;
-                                  const hs = imp && valorHoraExt ? (parseFloat(imp)/valorHoraExt).toFixed(2) : "";
+                                  const hs = imp && valorHoraExt ? (parseFloat(imp)/valorHoraExt).toString() : "";
                                   setP("horasExtraManualImp", imp);
-                                  if(imp) setP("horasExtraManualHs", hs);
+                                  setP("horasExtraManualHs", hs);
                                 }}
                                 placeholder="0"
                                 style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:13}}
@@ -2169,6 +2215,8 @@ function AppMain({ session }) {
                             </div>
                           </div>
                         </div>
+                          );
+                        })()}
                         {importeExtraManual > 0 && (
                           <div style={{marginTop:8,fontSize:11,color:"#276749",fontFamily:MONO}}>
                             + {horasExtraManualDisplay} = ${Math.round(importeExtraManual).toLocaleString("es-AR")}
@@ -2333,8 +2381,8 @@ function AppMain({ session }) {
                           <LiqRow label="Sueldo + adicionales" cantidad="" valor="" importe={fmt(subtotal)} bold color={COL.accent} separator />
 
                           <LiqRow label="DESCUENTOS" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label={`Llegadas tarde${descDemorasManual!==null?" ✎":""}`} indent cantidad={fraccionesDemora} valor={`${fmt(valorHora)}/4`} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
-                          <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={horasSalTemp} valor={fmt(valorHora)} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
+                          <LiqRow label={`Llegadas tarde${descDemorasManual!==null?" ✎":""}`} indent cantidad={fraccionesDemoraDisp} valor={descDemoras?`${fmt(valorHora)}/4`:"—"} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
+                          <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={horasSalTempDisp} valor={descSalTemp?fmt(valorHora):"—"} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
                           <LiqRow label="Total descuentos" cantidad="" valor="" importe={totalDescuentos?fmt(totalDescuentos):"—"} bold color="#c53030" separator />
 
                           <LiqRow label="Adelanto" cantidad="" valor="" importe={adelanto?fmt(adelanto):"—"} bold color="#b45309" separator />
