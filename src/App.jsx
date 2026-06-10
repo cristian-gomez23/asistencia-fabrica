@@ -366,6 +366,74 @@ function exportLiqPDF(d) {
   renderPDF();
 }
 
+/* ─── Exportar Novedades a PDF ───────────────────────────────────────────── */
+// Abre una ventana de impresión con la tabla de novedades (mismo estilo sobrio
+// que el PDF de liquidación). Usa window.print() para que el usuario guarde
+// como PDF o imprima directamente.
+function exportNovedadesPDF({ conMarca, sinMarca, ultimoDia, fmtFecha }) {
+  const today = new Date().toLocaleDateString("es-AR");
+  const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+  const filaHTML = (f, faded) => `
+    <tr${faded?' style="color:#888"':''}>
+      <td style="padding:5px 8px;font-family:monospace;color:#888;border-bottom:1px solid #eee">${esc(f.emp.empNo)}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #eee">${esc(cap(f.emp.nombre))}</td>
+      <td style="padding:5px 8px;text-align:center;font-size:10px;color:#777;border-bottom:1px solid #eee">${esc(fmtFecha(f.fechaIng))}</td>
+      <td style="padding:5px 8px;text-align:center;font-family:monospace;font-weight:700;color:${f.ingreso?'#1a6b3f':'#bbb'};border-bottom:1px solid #eee">${esc(f.ingreso||"—")}</td>
+      <td style="padding:5px 8px;text-align:center;font-size:10px;color:#777;border-bottom:1px solid #eee">${esc(fmtFecha(f.fechaSal))}</td>
+      <td style="padding:5px 8px;text-align:center;font-family:monospace;font-weight:700;color:${f.salida?'#1e5fa8':'#bbb'};border-bottom:1px solid #eee">${esc(f.salida||"—")}</td>
+      <td style="padding:5px 10px;font-size:10.5px;color:#444;border-bottom:1px solid #eee">${esc(f.observacion||"")}</td>
+    </tr>`;
+
+  const seccion = (titulo, color, filas, fade) => filas.length ? `
+    <div style="font-size:11px;font-weight:700;color:${color};margin:16px 0 6px">${esc(titulo)} · ${filas.length}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:#1a1a1a;color:#fff">
+        <th style="padding:6px 8px;text-align:left;font-size:9px;letter-spacing:0.05em">N°</th>
+        <th style="padding:6px 10px;text-align:left;font-size:9px;letter-spacing:0.05em">NOMBRE</th>
+        <th style="padding:6px 8px;font-size:9px;letter-spacing:0.05em">FECHA ING.</th>
+        <th style="padding:6px 8px;font-size:9px;letter-spacing:0.05em">INGRESO</th>
+        <th style="padding:6px 8px;font-size:9px;letter-spacing:0.05em">FECHA SAL.</th>
+        <th style="padding:6px 8px;font-size:9px;letter-spacing:0.05em">SALIDA</th>
+        <th style="padding:6px 10px;text-align:left;font-size:9px;letter-spacing:0.05em">OBSERVACIONES</th>
+      </tr></thead>
+      <tbody>${filas.map(f=>filaHTML(f,fade)).join("")}</tbody>
+    </table>` : "";
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <style>
+    @page { size:A4 portrait; margin:14mm 12mm; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Helvetica Neue',Arial,sans-serif;background:#fff;color:#1a1a1a;font-size:11px}
+    .wrap{padding:6px 4px}
+    .gold-line{border:none;border-top:3px solid #b08a2e;margin:0 0 12px}
+    .title-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+    .doc-title{font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px}
+    .doc-meta{font-size:10px;color:#555;text-align:right;line-height:1.8}
+    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+  <div class="wrap">
+    <hr class="gold-line"/>
+    <div class="title-row">
+      <div class="doc-title">Novedades</div>
+      <div class="doc-meta">
+        Último día: <b>${esc(fmtFecha(ultimoDia))}</b><br>
+        Emitido: ${esc(today)}
+      </div>
+    </div>
+    ${seccion(`Presentes el ${fmtFecha(ultimoDia)}`, "#276749", conMarca, false)}
+    ${seccion(`Sin marca el ${fmtFecha(ultimoDia)} (última marca registrada)`, "#b45309", sinMarca, true)}
+  </div>
+  </body></html>`;
+
+  const win = window.open("", "_blank", "width=920,height=780");
+  if (!win) { alert("El navegador bloqueó la ventana emergente. Permití pop-ups para exportar el PDF."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 500);
+}
+
 /* ─── Exportar a Excel ───────────────────────────────────────────────────── */
 // rows: array de objetos; el orden de columnas lo da `headers` (array de [key,label])
 function exportXLSX(rows, headers, sheetName, fileName) {
@@ -399,50 +467,89 @@ const SB_HEADERS = (write=false) => ({
 });
 
 // ── Read all rows from a table ────────────────────────────────────────────
+// Devuelve un array si la lectura fue OK (puede estar vacío), o null si hubo
+// un error real de red/permiso. Esto permite distinguir "no hay datos todavía"
+// de "no me pude conectar".
 async function sbFetch(table, params="") {
   if (!SB_URL || !SB_KEY) return null;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
       headers: SB_HEADERS(false),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      let body = ""; try { body = await res.text(); } catch {}
+      console.error(`[Supabase] Error al leer "${table}": HTTP ${res.status} ${body}`.trim());
+      return null;
+    }
     return await res.json();
-  } catch { return null; }
+  } catch (err) {
+    console.error(`[Supabase] Error de red al leer "${table}":`, err?.message || err);
+    return null;
+  }
+}
+
+// ── Hook opcional para reportar fallos de escritura a la UI ───────────────
+// Se setea desde el componente con setSbWriteError. Si una escritura falla,
+// se llama con un objeto {table, detail} para que RRHH lo vea.
+let _sbOnWriteError = null;
+function setSbWriteErrorHandler(fn) { _sbOnWriteError = fn; }
+function _reportWriteError(table, detail) {
+  console.error(`[Supabase] Error al guardar en "${table}":`, detail);
+  if (_sbOnWriteError) _sbOnWriteError({ table, detail: String(detail), at: Date.now() });
+}
+
+// Intenta una petición POST/DELETE; reintenta 1 vez ante error de red.
+// Devuelve true si Supabase confirmó la escritura, false si falló.
+async function _sbWrite(url, options, table, attempt = 0) {
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      // 4xx/5xx: leer el cuerpo para diagnóstico (constraint, permisos, etc.)
+      let body = "";
+      try { body = await res.text(); } catch {}
+      _reportWriteError(table, `HTTP ${res.status} ${res.statusText} ${body}`.trim());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    // Error de red: reintentar una sola vez tras breve espera
+    if (attempt < 1) {
+      await new Promise(r => setTimeout(r, 800));
+      return _sbWrite(url, options, table, attempt + 1);
+    }
+    _reportWriteError(table, err?.message || err);
+    return false;
+  }
 }
 
 // ── Upsert many rows ─────────────────────────────────────────────────────
 async function sbUpsert(table, rows, pk="id") {
-  if (!SB_URL || !SB_KEY || !rows?.length) return;
-  try {
-    await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${pk}`, {
-      method: "POST",
-      headers: { ...SB_HEADERS(true), "Prefer": "resolution=merge-duplicates" },
-      body: JSON.stringify(rows),
-    });
-  } catch {}
+  if (!SB_URL || !SB_KEY) { _reportWriteError(table, "Supabase no configurado (faltan VITE_SUPABASE_*)"); return false; }
+  if (!rows?.length) return true;
+  return _sbWrite(`${SB_URL}/rest/v1/${table}?on_conflict=${pk}`, {
+    method: "POST",
+    headers: { ...SB_HEADERS(true), "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify(rows),
+  }, table);
 }
 
 // ── Upsert single row ────────────────────────────────────────────────────
 async function sbUpsertSingle(table, row, pk="id") {
-  if (!SB_URL || !SB_KEY) return;
-  try {
-    await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${pk}`, {
-      method: "POST",
-      headers: { ...SB_HEADERS(true), "Prefer": "resolution=merge-duplicates" },
-      body: JSON.stringify(row),
-    });
-  } catch {}
+  if (!SB_URL || !SB_KEY) { _reportWriteError(table, "Supabase no configurado (faltan VITE_SUPABASE_*)"); return false; }
+  return _sbWrite(`${SB_URL}/rest/v1/${table}?on_conflict=${pk}`, {
+    method: "POST",
+    headers: { ...SB_HEADERS(true), "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify(row),
+  }, table);
 }
 
 // ── Delete row ───────────────────────────────────────────────────────────
 async function sbDelete(table, id, pk="id") {
-  if (!SB_URL || !SB_KEY) return;
-  try {
-    await fetch(`${SB_URL}/rest/v1/${table}?${pk}=eq.${encodeURIComponent(id)}`, {
-      method: "DELETE",
-      headers: SB_HEADERS(true),
-    });
-  } catch {}
+  if (!SB_URL || !SB_KEY) { _reportWriteError(table, "Supabase no configurado (faltan VITE_SUPABASE_*)"); return false; }
+  return _sbWrite(`${SB_URL}/rest/v1/${table}?${pk}=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: SB_HEADERS(true),
+  }, table);
 }
 
 // ── Realtime subscription via Supabase websocket ─────────────────────────
@@ -555,6 +662,7 @@ function AppMain({ session }) {
   const [sbLoading, setSbLoading] = useState(false);
   const [sbStatus,  setSbStatus]  = useState(""); // "synced" | "error" | ""
   const [sbLastSync,setSbLastSync]= useState(null);
+  const [sbWriteError, setSbWriteError] = useState(null); // {table, detail, at} último fallo de guardado
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState({text:"",ok:true});
   const [recF, setRecF]           = useState({emp:"",fecha:""});
@@ -596,6 +704,15 @@ function AppMain({ session }) {
   useEffect(()=>saveLS("sp_days",specialDays),[specialDays]);
   useEffect(()=>saveLS("man_sal",manualSalidas),[manualSalidas]);
   useEffect(()=>saveLS("man_rec",manualRecords),[manualRecords]);
+
+  // ── Registrar handler global de errores de escritura ─────────────────────
+  useEffect(()=>{
+    setSbWriteErrorHandler((e)=>{
+      setSbWriteError(e);
+      setSbStatus("error");
+    });
+    return ()=>setSbWriteErrorHandler(null);
+  },[]);
 
   // ── Load from Supabase on mount ──────────────────────────────────────────
   useEffect(()=>{
@@ -850,7 +967,7 @@ function AppMain({ session }) {
           {!sbLoading && sbStatus==="error" && (
             <span style={{fontSize:11,color:"#c53030",display:"flex",alignItems:"center",gap:5}}>
               <span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"#f87171"}}/>
-              Sin conexión a Supabase
+              {sbWriteError ? `No se pudo guardar (${sbWriteError.table})` : "Sin conexión a Supabase"}
             </span>
           )}
           {!SB_URL && (
@@ -865,6 +982,23 @@ function AppMain({ session }) {
           <span style={{...S.chip,background:"#f0faf4",color:"#276749"}}>{empList.filter(e=>e.tipo==="administrativo").length} adm.</span>
         </div>
       </header>
+
+      {/* BANNER DE ERROR DE GUARDADO — visible para que RRHH no pierda datos sin enterarse */}
+      {sbWriteError && (
+        <div style={{background:"#fff5f5",borderBottom:"1px solid #fed7d7",padding:"10px 28px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,color:"#c53030",fontWeight:600,display:"flex",alignItems:"center",gap:7}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c53030" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Atención: el último cambio no se pudo guardar en la base de datos.
+          </span>
+          <span style={{fontSize:12,color:COL.textSub}}>
+            Tabla <code style={{fontFamily:MONO,background:"#fff",padding:"1px 6px",borderRadius:4,color:"#c53030"}}>{sbWriteError.table}</code>. Quedó guardado solo en este equipo. Revisá la conexión y volvé a editarlo, o descartá este aviso.
+          </span>
+          <button onClick={()=>{ setSbWriteError(null); setSbStatus(sbLastSync?"synced":""); }}
+            style={{marginLeft:"auto",background:"#fff",border:"1px solid #fed7d7",borderRadius:6,padding:"5px 12px",fontSize:12,color:"#c53030",cursor:"pointer",fontFamily:SANS,fontWeight:600}}>
+            Descartar
+          </button>
+        </div>
+      )}
 
       {/* TABS */}
       <div style={S.tabBar}>
@@ -2565,6 +2699,9 @@ function AppMain({ session }) {
                 fechaIng:    ultimoDia,
                 salida:      salPrev?.salida || null,
                 fechaSal:    salPrev?.fecha  || null,
+                recId:       recDelDia.id,
+                recManual:   recDelDia.manual || false,
+                observacion: recDelDia.observacion || null,
               });
             } else {
               // su registro más reciente con algo cargado
@@ -2580,6 +2717,9 @@ function AppMain({ session }) {
                 fechaIng: ult?.fecha   || null,
                 salida:   (ult?.salida) || (salPrev?.salida) || null,
                 fechaSal: (ult?.salida ? ult.fecha : salPrev?.fecha) || null,
+                recId:       ult?.id || null,
+                recManual:   ult?.manual || false,
+                observacion: ult?.observacion || null,
               });
             }
           }
@@ -2599,18 +2739,37 @@ function AppMain({ session }) {
               ["empNo","N°"],["nombre","Nombre"],["estado","Estado"],
               ["fechaIng","Fecha ingreso"],["ingreso","Ingreso"],
               ["fechaSal","Fecha salida"],["salida","Salida"],
+              ["observacion","Observaciones"],
             ];
             const rows = [
               ...conMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Presente",
-                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||""})),
+                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||"",observacion:f.observacion||""})),
               ...sinMarca.map(f=>({empNo:f.emp.empNo,nombre:cap(f.emp.nombre),estado:"Sin marca",
-                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||""})),
+                fechaIng:f.fechaIng||"",ingreso:f.ingreso||"",fechaSal:f.fechaSal||"",salida:f.salida||"",observacion:f.observacion||""})),
             ];
             exportXLSX(rows, headers, "Novedades", `novedades_${ultimoDia||"sd"}.xlsx`);
           };
 
+          const exportarNovedadesPDF = ()=>{
+            exportNovedadesPDF({ conMarca, sinMarca, ultimoDia, fmtFecha });
+          };
+
+          // Guarda la observación contra el registro de ingreso de esa fila
+          const guardarObsNov = (f, valor)=>{
+            const v = (valor||"").trim();
+            if(!f.recId) return; // sin registro asociado no hay dónde guardar
+            if(f.recManual){
+              setManualRecords(p=>p.map(x=>x.id===f.recId?{...x,observacion:v||null}:x));
+            } else {
+              setRecords(p=>p.map(x=>x.id===f.recId?{...x,observacion:v||null}:x));
+            }
+            sbUpsertSingle("registros",{id:f.recId,observacion:v||null},"id");
+          };
+
           const RowNov = (f, faded)=>{
             const TIPO = TIPO_CFG[f.emp.tipo||"operario"]||TIPO_CFG.operario;
+            const editKey = `nov_${f.emp.empNo}`;
+            const editing = editingCell?.id===editKey && editingCell?.field==="observacion";
             return (
               <tr key={f.emp.empNo}>
                 <td style={{...S.td,textAlign:"left",fontFamily:MONO,color:COL.textFaint}}>{f.emp.empNo}</td>
@@ -2624,6 +2783,26 @@ function AppMain({ session }) {
                 <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.ingreso?(faded?COL.textFaint:"#276749"):COL.textFaint}}>{f.ingreso||"—"}</td>
                 <td style={{...S.td,fontSize:12,color:COL.textFaint}}>{fmtFecha(f.fechaSal)}</td>
                 <td style={{...S.td,fontFamily:MONO,fontWeight:600,color:f.salida?(faded?COL.textFaint:"#1e5fa8"):COL.textFaint}}>{f.salida||"—"}</td>
+                <td style={{...S.td,fontSize:11,padding:"4px 8px",maxWidth:200,textAlign:"left"}}>
+                  {editing
+                    ? <input autoFocus
+                        defaultValue={f.observacion||""}
+                        onBlur={e=>{ guardarObsNov(f, e.target.value); setEditingCell(null); }}
+                        onKeyDown={e=>{ if(e.key==="Escape")setEditingCell(null); if(e.key==="Enter")e.target.blur(); }}
+                        placeholder="Escribir observación…"
+                        style={{...S.inlineInput,fontSize:11,padding:"3px 6px",width:"100%"}}
+                      />
+                    : <span
+                        onClick={()=>f.recId&&setEditingCell({id:editKey,field:"observacion"})}
+                        title={f.recId?"Click para editar observación":"Sin registro asociado"}
+                        style={{color:f.observacion?COL.textSub:"#d1d5db",
+                          cursor:f.recId?"pointer":"default",
+                          borderBottom:f.recId?"1px dashed #d1d5db":"none",display:"block",
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:190}}>
+                        {f.observacion||(f.recId?<span style={{fontSize:10,fontStyle:"italic"}}>agregar obs.</span>:"—")}
+                      </span>
+                  }
+                </td>
               </tr>
             );
           };
@@ -2639,9 +2818,14 @@ function AppMain({ session }) {
                   </p>
                 </div>
                 {records.length>0&&(
-                  <button onClick={exportarNovedades} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
-                  </button>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={exportarNovedades} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                    </button>
+                    <button onClick={exportarNovedadesPDF} style={{...S.btnS,background:"#fff",color:"#c53030",border:"1px solid #fed7d7",display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar PDF
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -2656,11 +2840,11 @@ function AppMain({ session }) {
                   </div>
                   <div style={S.tblWrap}>
                     <table style={S.table}>
-                      <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
+                      <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida","Observaciones"]}/>
                       <tbody>
                         {conMarca.length>0
                           ? conMarca.map(f=>RowNov(f,false))
-                          : <tr><td colSpan={6} style={{...S.td,color:COL.textFaint,padding:"18px"}}>Nadie marcó ese día.</td></tr>}
+                          : <tr><td colSpan={7} style={{...S.td,color:COL.textFaint,padding:"18px"}}>Nadie marcó ese día.</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -2672,7 +2856,7 @@ function AppMain({ session }) {
                       </div>
                       <div style={{...S.tblWrap,opacity:0.92}}>
                         <table style={S.table}>
-                          <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida"]}/>
+                          <THead cols={["N°","Nombre","Fecha ingreso","Ingreso","Fecha salida","Salida","Observaciones"]}/>
                           <tbody>
                             {sinMarca.map(f=>RowNov(f,true))}
                           </tbody>
