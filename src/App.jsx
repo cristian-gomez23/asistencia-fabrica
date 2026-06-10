@@ -543,6 +543,20 @@ async function sbUpsertSingle(table, row, pk="id") {
   }, table);
 }
 
+// ── Update parcial de una fila existente (PATCH) ──────────────────────────
+// A diferencia del upsert, PATCH actualiza SOLO los campos enviados y deja
+// intactos los demás. Se usa para editar un campo (ej. observación) de un
+// registro que ya existe, sin riesgo de violar constraints not-null de las
+// columnas que no se mandan (emp_no, fecha, etc.).
+async function sbUpdate(table, id, patch, pk="id") {
+  if (!SB_URL || !SB_KEY) { _reportWriteError(table, "Supabase no configurado (faltan VITE_SUPABASE_*)"); return false; }
+  return _sbWrite(`${SB_URL}/rest/v1/${table}?${pk}=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: SB_HEADERS(true),
+    body: JSON.stringify(patch),
+  }, table);
+}
+
 // ── Delete row ───────────────────────────────────────────────────────────
 async function sbDelete(table, id, pk="id") {
   if (!SB_URL || !SB_KEY) { _reportWriteError(table, "Supabase no configurado (faltan VITE_SUPABASE_*)"); return false; }
@@ -1211,7 +1225,7 @@ function AppMain({ session }) {
                                   } else {
                                     setRecords(p=>p.map(x=>x.id===r.id?{...x,observacion:v||null}:x));
                                   }
-                                  sbUpsertSingle("registros",{id:r.id,observacion:v||null},"id");
+                                  sbUpdate("registros",r.id,{observacion:v||null},"id");
                                   setEditingCell(null);
                                 }}
                                 onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);if(e.key==="Enter")e.target.blur();}}
@@ -2763,7 +2777,7 @@ function AppMain({ session }) {
             } else {
               setRecords(p=>p.map(x=>x.id===f.recId?{...x,observacion:v||null}:x));
             }
-            sbUpsertSingle("registros",{id:f.recId,observacion:v||null},"id");
+            sbUpdate("registros",f.recId,{observacion:v||null},"id");
           };
 
           const RowNov = (f, faded)=>{
