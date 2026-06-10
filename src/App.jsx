@@ -818,7 +818,7 @@ function AppMain({ session }) {
       // Sync employees to Supabase silently
       setEmployees(prev => {
         const snap = Object.values(prev);
-        sbUpsert("empleados", snap.map(empToRow));
+        sbUpsert("empleados", snap.map(empToRow), "emp_no");
         return prev;
       });
       // Sync to Supabase silently
@@ -846,7 +846,7 @@ function AppMain({ session }) {
       return u;
     });
     setBulkSel(new Set());
-    sbUpsert("empleados", Object.values(updated).map(empToRow));
+    sbUpsert("empleados", Object.values(updated).map(empToRow), "emp_no");
   };
 
   const toggleTipo = (empNo) => {
