@@ -1742,6 +1742,25 @@ function AppMain({ session }) {
 
           const getP = (empNo) => liqParams[String(empNo)] || {};
 
+          // Deriva valor día, hora, feriado y sábado a partir del sueldo bruto.
+          //   día      = sueldo / 22
+          //   hora     = día / 8
+          //   feriado  = sueldo / 22  (igual que el día de falta)
+          //   sábado   = sueldo / 22  (día completo)
+          //   hora ext = hora * 1.5
+          const derivar = (basico) => {
+            const b = parseFloat(basico) || 0;
+            if (!b) return { valorDia:"", valorHora:"", valorDiaFinde:"", valorHoraExt:"" };
+            const valorDia  = b / 22;
+            const valorHora = valorDia / 8;
+            return {
+              valorDia:      valorDia.toFixed(2),
+              valorHora:     valorHora.toFixed(2),
+              valorDiaFinde: valorDia.toFixed(2),         // sábado = sueldo/22
+              valorHoraExt:  (valorHora * 1.5).toFixed(2), // hora extra = hora*1.5
+            };
+          };
+
           const setVal = (empNo, key, val) => {
             setLiqParams(prev => ({
               ...prev,
@@ -1873,7 +1892,12 @@ function AppMain({ session }) {
                           <div>
                             <div style={{fontSize:10,color:COL.textFaint,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Sueldo bruto</div>
                             {isEd
-                              ? <input type="number" min="0" step="any" value={circularDraft.sueldoBasico||""} onChange={e=>setCircularDraft(p=>({...p,sueldoBasico:e.target.value}))} placeholder="0"
+                              ? <input type="number" min="0" step="any" value={circularDraft.sueldoBasico||""}
+                                  onChange={e=>{
+                                    const v = e.target.value;
+                                    setCircularDraft(p=>({...p, sueldoBasico:v, ...derivar(v)}));
+                                  }}
+                                  placeholder="0"
                                   style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:14,fontWeight:600}}/>
                               : <span style={{fontFamily:MONO,fontSize:15,fontWeight:700,color:p.sueldoBasico?COL.text:"#c0c8d2"}}>{p.sueldoBasico?fmt$(p.sueldoBasico):"—"}</span>
                             }
@@ -1900,11 +1924,11 @@ function AppMain({ session }) {
                           <table style={{...S.table,border:`1px solid ${COL.border}`}}>
                             <tbody>
                               {[
-                                {label:"Valor a descontar por día de falta", field:"valorDia",      note:""},
-                                {label:"Valor hora de referencia",            field:"valorHora",     note:"por hora"},
-                                {label:"Feriados trabajados",                 field:"valorDia",      note:`hasta las ${emp.salida||"16:30"} hs`, readOnly:true},
-                                {label:"Sábados",                             field:"valorDiaFinde", note:"08 a 14 hs"},
-                                {label:"Horas extras",                        field:"valorHoraExt",  note:`a partir de las ${emp.salida||"16:30"} hs`},
+                                {label:"Valor a descontar por día de falta", field:"valorDia",      note:"sueldo / 22"},
+                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 8 · por hora"},
+                                {label:"Feriados trabajados",                 field:"valorDia",      note:`sueldo / 22 · hasta las ${emp.salida||"16:30"} hs`},
+                                {label:"Sábados",                             field:"valorDiaFinde", note:"sueldo / 22 · 08 a 14 hs"},
+                                {label:"Horas extras",                        field:"valorHoraExt",  note:`hora × 1.5 · a partir de las ${emp.salida||"16:30"} hs`},
                               ].map(({label,field,note,readOnly},idx)=>(
                                 <tr key={idx} style={{background:idx%2===0?"#fff":"#fafbfc",borderBottom:`1px solid ${COL.border}`}}>
                                   <td style={{...S.td,textAlign:"left",color:COL.textSub,fontSize:12,width:"45%"}}>{label}</td>
