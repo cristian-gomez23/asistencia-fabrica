@@ -654,7 +654,28 @@ function rowToEmp(r) {
   };
 }
 
-function diaToRow(fecha, tipo) { return { fecha, tipo }; }
+  function diaToRow(fecha, tipo) { return { fecha, tipo }; }
+
+// ── Histórico de circulares ───────────────────────────────────────────────
+function circHistToRow(empNo, nombre, datos, motivo, archivedAt) {
+  return {
+    id: `${empNo}_${archivedAt}`,
+    emp_no: empNo,
+    nombre: nombre || null,
+    archived_at: archivedAt,
+    motivo: motivo || "manual",
+    datos,
+  };
+}
+
+async function sbInsertCircHist(row) {
+  if (!SB_URL || !SB_KEY) { _reportWriteError("circular_historico", "Supabase no configurado"); return false; }
+  return _sbWrite(`${SB_URL}/rest/v1/circular_historico`, {
+    method: "POST",
+    headers: { ...SB_HEADERS(true), "Prefer": "return=minimal" },
+    body: JSON.stringify(row),
+  }, "circular_historico");
+}
 
 
 const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Circular","Resumen","Liquidación","Novedades"];
@@ -700,6 +721,8 @@ function AppMain({ session }) {
   const [editDraft, setEditDraft]   = useState({});
   const [bulkH, setBulkH]         = useState({entrada:"06:00",salida:"16:30"});
   const [bulkSel, setBulkSel]     = useState(new Set());
+  const [circHist, setCircHist]   = useState([]);        // versiones archivadas de circulares
+  const [histEmp, setHistEmp]     = useState(null);      // empNo cuyo histórico se ve abierto
   const fileRef = useRef();
 
   // ── Persist to localStorage as cache ────────────────────────────────────
@@ -738,7 +761,8 @@ function AppMain({ session }) {
       sbFetch("dias_especiales","select=*"),
       sbFetch("correcciones","select=*"),
       sbFetch("liq_params","select=*"),
-    ]).then(([regs,emps,dias,corrs,liqRows])=>{
+      sbFetch("circular_historico","select=*&order=archived_at.desc"),
+    ]).then(([regs,emps,dias,corrs,liqRows,histRows])=>{
       // Solo sobreescribir si Supabase trae datos — nunca borrar con array vacío
       if (regs?.length) {
         const byId={};
@@ -768,6 +792,7 @@ function AppMain({ session }) {
         for (const row of liqRows) map[String(row.emp_no)] = row.datos;
         setLiqParams(map);
       }
+      if (histRows?.length) setCircHist(histRows);
       setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
     }).catch((err)=>{ console.error("Supabase load error:", err); setSbLoading(false); setSbStatus("error"); });
   },[]);
@@ -857,6 +882,18 @@ function AppMain({ session }) {
       return { ...p, [empNo]: updated };
     });
   };
+
+  // Archiva la versión actual de la circular de un empleado como copia histórica
+  const archivarCircular = useCallback((empNo, motivo="manual") => {
+    const datos = liqParams[String(empNo)];
+    if (!datos || !datos.sueldoBasico) return false; // nada que archivar
+    const emp = employees[empNo];
+    const archivedAt = new Date().toISOString();
+    const row = circHistToRow(empNo, emp?.nombre, datos, motivo, archivedAt);
+    setCircHist(prev => [row, ...prev]);   // optimista
+    sbInsertCircHist(row);
+    return true;
+  }, [liqParams, employees]);
 
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
   const filteredEmps=empList.filter(e=>{
@@ -1832,9 +1869,34 @@ function AppMain({ session }) {
                           {!p.sueldoBasico&&<span style={{fontSize:10,background:"#fef9f0",color:"#b45309",border:"1px solid #f6d860",borderRadius:4,padding:"1px 7px",fontWeight:600}}>sin datos</span>}
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          {!isEd && p.sueldoBasico && (
+                            <button onClick={()=>{
+                              if(confirm(`¿Archivar la circular actual de ${cap(emp.nombre)}? Quedará guardada como versión histórica con la fecha de hoy.`)){
+                                archivarCircular(emp.empNo,"manual");
+                              }
+                            }}
+                              title="Guardar una copia histórica de esta circular"
+                              style={{...S.editBtn,display:"flex",alignItems:"center",gap:5}}>
+                              🗄 Archivar
+                            </button>
+                          )}
+                          {!isEd && circHist.some(h=>h.emp_no===emp.empNo) && (
+                            <button onClick={()=>setHistEmp(histEmp===emp.empNo?null:emp.empNo)}
+                              title="Ver versiones anteriores"
+                              style={{...S.editBtn,
+                                background: histEmp===emp.empNo?COL.accentBg:"transparent",
+                                color: histEmp===emp.empNo?COL.accent:COL.textSub}}>
+                              🕓 Histórico ({circHist.filter(h=>h.emp_no===emp.empNo).length})
+                            </button>
+                          )}
                           {isEd
                             ? <>
                                 <button onClick={()=>{
+                                  const anterior = liqParams[String(emp.empNo)] || {};
+                                  const sueldoCambio =
+                                    anterior.sueldoBasico &&
+                                    String(anterior.sueldoBasico) !== String(circularDraft.sueldoBasico);
+                                  if (sueldoCambio) archivarCircular(emp.empNo, "cambio_sueldo");
                                   setLiqParams(prev=>({...prev,[String(emp.empNo)]:{...(prev[String(emp.empNo)]||{}),...circularDraft}}));
                                   setCircularEdit(null);
                                 }} style={S.saveBtn}>Guardar</button>
@@ -1983,6 +2045,46 @@ function AppMain({ session }) {
                             </div>
                           </div>
                         </div>
+
+                        {/* Histórico de versiones */}
+                        {histEmp===emp.empNo && (
+                          <div style={{marginTop:18,paddingTop:16,borderTop:`2px solid ${COL.border}`}}>
+                            <div style={{fontSize:11,fontWeight:700,color:COL.accent,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>
+                              Versiones archivadas
+                            </div>
+                            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                              {circHist.filter(h=>h.emp_no===emp.empNo)
+                                .sort((a,b)=>b.archived_at.localeCompare(a.archived_at))
+                                .map(h=>{
+                                  const dd = h.datos||{};
+                                  const fechaH = new Date(h.archived_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+                                  return (
+                                    <div key={h.id} style={{background:"#fafbfc",border:`1px solid ${COL.border}`,borderRadius:8,padding:"10px 14px"}}>
+                                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
+                                        <span style={{fontSize:12,fontWeight:600,color:COL.text}}>
+                                          {fechaH}
+                                          <span style={{marginLeft:8,fontSize:10,padding:"1px 7px",borderRadius:20,
+                                            background: h.motivo==="cambio_sueldo"?"#fef3e2":COL.accentBg,
+                                            color: h.motivo==="cambio_sueldo"?"#b45309":COL.accent,fontWeight:600}}>
+                                            {h.motivo==="cambio_sueldo"?"por aumento":"manual"}
+                                          </span>
+                                        </span>
+                                        <span style={{fontFamily:MONO,fontSize:13,fontWeight:700,color:COL.text}}>
+                                          {dd.sueldoBasico?`$ ${Number(dd.sueldoBasico).toLocaleString("es-AR",{minimumFractionDigits:2})}`:"—"}
+                                        </span>
+                                      </div>
+                                      <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:11,color:COL.textSub,fontFamily:MONO}}>
+                                        <span>Día: {dd.valorDia?Number(dd.valorDia).toLocaleString("es-AR",{minimumFractionDigits:2}):"—"}</span>
+                                        <span>Hora: {dd.valorHora?Number(dd.valorHora).toLocaleString("es-AR",{minimumFractionDigits:2}):"—"}</span>
+                                        <span>Sáb: {dd.valorDiaFinde?Number(dd.valorDiaFinde).toLocaleString("es-AR",{minimumFractionDigits:2}):"—"}</span>
+                                        <span>H.ext: {dd.valorHoraExt?Number(dd.valorHoraExt).toLocaleString("es-AR",{minimumFractionDigits:2}):"—"}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
 
                       </div>
                     </div>
