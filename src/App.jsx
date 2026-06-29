@@ -723,6 +723,7 @@ function AppMain({ session }) {
   const [bulkSel, setBulkSel]     = useState(new Set());
   const [circHist, setCircHist]   = useState([]);        // versiones archivadas de circulares
   const [histEmp, setHistEmp]     = useState(null);      // empNo cuyo histórico se ve abierto
+  const [verPlanillaHist, setVerPlanillaHist] = useState(false); // planilla global de histórico
   const fileRef = useRef();
 
   // ── Persist to localStorage as cache ────────────────────────────────────
@@ -1832,9 +1833,133 @@ function AppMain({ session }) {
                     </div>
                   )}
                 </div>
-                <input placeholder="Buscar empleado…" value={circularF}
-                  onChange={e=>setCircularF(e.target.value)} style={S.sInput}/>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  {circHist.length>0 && (
+                    <button onClick={()=>setVerPlanillaHist(v=>!v)}
+                      style={{...S.editBtn,display:"flex",alignItems:"center",gap:6,
+                        background: verPlanillaHist?COL.accentBg:"transparent",
+                        color: verPlanillaHist?COL.accent:COL.textSub,
+                        borderColor: verPlanillaHist?COL.accent:COL.border}}>
+                      🕓 Ver histórico ({circHist.length})
+                    </button>
+                  )}
+                  <input placeholder="Buscar empleado…" value={circularF}
+                    onChange={e=>setCircularF(e.target.value)} style={S.sInput}/>
+                </div>
               </div>
+
+              {/* ── Planilla global del histórico de circulares ── */}
+              {verPlanillaHist && (()=>{
+                const fmtNum = v => v ? Number(v).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2}) : "—";
+                const fmtFechaIng = f => f ? new Date(f+"T12:00:00").toLocaleDateString("es-AR") : "—";
+                // ordenar por fecha de archivado desc, y dentro por nº de empleado
+                const filasHist = [...circHist]
+                  .sort((a,b)=> b.archived_at.localeCompare(a.archived_at) || a.emp_no-b.emp_no);
+
+                const thH = {padding:"9px 12px",color:COL.textFaint,fontSize:11,fontWeight:600,
+                  textAlign:"right",whiteSpace:"nowrap",letterSpacing:"0.03em",
+                  background:"#f7f8fa",borderBottom:`1px solid ${COL.border}`};
+                const tdH = (color=COL.textSub) => ({padding:"8px 12px",color,textAlign:"right",
+                  borderBottom:`1px solid ${COL.border}`,whiteSpace:"nowrap",fontFamily:MONO,fontSize:12});
+
+                const exportarHist = ()=>{
+                  const headers = [
+                    ["empNo","N°"],["nombre","Empleado"],["fechaArch","Fecha archivado"],["motivo","Motivo"],
+                    ["sueldo","Sueldo bruto"],["valorDia","Valor día"],["valorHora","Valor hora"],
+                    ["valorSab","Sábado"],["valorHExt","Hora extra"],["area","Área"],
+                    ["ingreso","Ingreso"],["obs","Observaciones"],
+                  ];
+                  const rows = filasHist.map(h=>{
+                    const dd = h.datos||{};
+                    const emp = employees[h.emp_no];
+                    return {
+                      empNo: h.emp_no,
+                      nombre: dd.nombreDisplay || (emp?cap(emp.nombre):h.nombre||""),
+                      fechaArch: new Date(h.archived_at).toLocaleString("es-AR"),
+                      motivo: h.motivo==="cambio_sueldo"?"Por aumento":"Manual",
+                      sueldo: dd.sueldoBasico?Math.round(Number(dd.sueldoBasico)):"",
+                      valorDia: dd.valorDia?Number(Number(dd.valorDia).toFixed(2)):"",
+                      valorHora: dd.valorHora?Number(Number(dd.valorHora).toFixed(2)):"",
+                      valorSab: dd.valorDiaFinde?Number(Number(dd.valorDiaFinde).toFixed(2)):"",
+                      valorHExt: dd.valorHoraExt?Number(Number(dd.valorHoraExt).toFixed(2)):"",
+                      area: dd.area||"",
+                      ingreso: dd.ingreso?new Date(dd.ingreso+"T12:00:00").toLocaleDateString("es-AR"):"",
+                      obs: dd.observaciones||"",
+                    };
+                  });
+                  exportXLSX(rows, headers, "Histórico circulares", "historico_circulares.xlsx");
+                };
+
+                return (
+                  <div style={{marginBottom:22,background:COL.surface,border:`1px solid ${COL.border}`,borderRadius:12,overflow:"hidden"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",background:"#f7f8fa",borderBottom:`2px solid ${COL.accent}`,flexWrap:"wrap",gap:10}}>
+                      <span style={{fontSize:14,fontWeight:700,color:COL.text,display:"flex",alignItems:"center",gap:8}}>
+                        🕓 Histórico de circulares
+                        <span style={{fontFamily:MONO,fontSize:12,fontWeight:400,color:COL.textFaint}}>· {filasHist.length} versiones archivadas</span>
+                      </span>
+                      <div style={{display:"flex",gap:8}}>
+                        <button onClick={exportarHist} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                        </button>
+                        <button onClick={()=>setVerPlanillaHist(false)} style={S.cancelBtn}>Cerrar</button>
+                      </div>
+                    </div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{...S.table,fontSize:12}}>
+                        <thead>
+                          <tr>
+                            <th style={{...S.th,textAlign:"left"}}>Empleado</th>
+                            <th style={{...S.th,textAlign:"left"}}>Archivado</th>
+                            <th style={{...S.th,textAlign:"left"}}>Motivo</th>
+                            <th style={thH}>Sueldo bruto</th>
+                            <th style={thH}>Día</th>
+                            <th style={thH}>Hora</th>
+                            <th style={thH}>Sábado</th>
+                            <th style={thH}>Hora extra</th>
+                            <th style={{...S.th,textAlign:"left"}}>Área</th>
+                            <th style={{...S.th,textAlign:"left"}}>Ingreso</th>
+                            <th style={{...S.th,textAlign:"left"}}>Observaciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filasHist.map((h,i)=>{
+                            const dd = h.datos||{};
+                            const emp = employees[h.emp_no];
+                            const nombre = dd.nombreDisplay || (emp?cap(emp.nombre):h.nombre||"—");
+                            const fechaArch = new Date(h.archived_at).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+                            return (
+                              <tr key={h.id} style={{background:i%2===0?"#fff":"#fafbfc"}}>
+                                <td style={{...S.td,textAlign:"left",fontWeight:600,color:COL.text}}>
+                                  <span style={{fontFamily:MONO,fontSize:11,color:COL.textFaint,marginRight:8}}>{h.emp_no}</span>
+                                  {nombre}
+                                </td>
+                                <td style={{...S.td,textAlign:"left",fontSize:12,color:COL.textSub,fontFamily:MONO}}>{fechaArch}</td>
+                                <td style={{...S.td,textAlign:"left"}}>
+                                  <span style={{fontSize:10,padding:"1px 8px",borderRadius:20,fontWeight:600,
+                                    background: h.motivo==="cambio_sueldo"?"#fef3e2":COL.accentBg,
+                                    color: h.motivo==="cambio_sueldo"?"#b45309":COL.accent}}>
+                                    {h.motivo==="cambio_sueldo"?"por aumento":"manual"}
+                                  </span>
+                                </td>
+                                <td style={{...tdH(COL.text),fontWeight:700}}>{dd.sueldoBasico?`$ ${fmtNum(dd.sueldoBasico)}`:"—"}</td>
+                                <td style={tdH()}>{fmtNum(dd.valorDia)}</td>
+                                <td style={tdH()}>{fmtNum(dd.valorHora)}</td>
+                                <td style={tdH()}>{fmtNum(dd.valorDiaFinde)}</td>
+                                <td style={tdH("#276749")}>{fmtNum(dd.valorHoraExt)}</td>
+                                <td style={{...S.td,textAlign:"left",fontSize:12,color:dd.area?COL.textSub:"#c0c8d2"}}>{dd.area||"—"}</td>
+                                <td style={{...S.td,textAlign:"left",fontSize:12,color:dd.ingreso?COL.textSub:"#c0c8d2"}}>{fmtFechaIng(dd.ingreso)}</td>
+                                <td style={{...S.td,textAlign:"left",fontSize:11,color:dd.observaciones?COL.textSub:"#c0c8d2",maxWidth:220,whiteSpace:"normal"}}>
+                                  {dd.observaciones||"—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div style={{display:"flex",flexDirection:"column",gap:20}}>
                 {filteredCircular.map(emp=>{
