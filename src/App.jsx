@@ -171,7 +171,7 @@ function calcRecord(rec, empCfg, specialDays) {
   // Operarios no acumulan horas extra en sábados, domingos ni feriados
   const sinExtra   = esOperario && (esSabado || esDomingo || esFeriado);
   const effectiveCfg = esFeriado
-    ? { entrada: cfg.entrada, salida: "14:00" }
+    ? { entrada: cfg.entrada, salida: dayType?.salida || "14:00" }
     : esSabado
     ? { entrada: cfg.entrada, salida: "13:00" }
     : cfg;
@@ -843,7 +843,7 @@ function AppMain({ session }) {
       }
       if (dias?.length) {
         const map={};
-        for(const d of dias) map[d.fecha]={tipo:d.tipo};
+        for(const d of dias) map[d.fecha]={tipo:d.tipo, salida:d.salida||undefined};
         setSpecialDays(map);
       }
       if (corrs?.length) {
@@ -881,8 +881,8 @@ function AppMain({ session }) {
     );
 
     const unsubDias = sbSubscribe("dias_especiales",
-      (r)=>setSpecialDays(p=>({...p,[r.fecha]:{tipo:r.tipo}})),
-      (r)=>setSpecialDays(p=>({...p,[r.fecha]:{tipo:r.tipo}})),
+      (r)=>setSpecialDays(p=>({...p,[r.fecha]:{tipo:r.tipo, salida:r.salida||undefined}})),
+      (r)=>setSpecialDays(p=>({...p,[r.fecha]:{tipo:r.tipo, salida:r.salida||undefined}})),
       (r)=>setSpecialDays(p=>{const u={...p};delete u[r.fecha];return u;})
     );
 
@@ -1716,8 +1716,19 @@ function AppMain({ session }) {
                 sbDelete("dias_especiales", fecha, "fecha");
                 return u;
               }
-              sbUpsertSingle("dias_especiales", {fecha, tipo}, "fecha");
-              return {...prev, [fecha]: {tipo}};
+              // Al marcar feriado, precargar salida 14:00
+              const salida = tipo === "feriado" ? "14:00" : undefined;
+              sbUpsertSingle("dias_especiales", {fecha, tipo, salida: salida||null}, "fecha");
+              return {...prev, [fecha]: {tipo, salida}};
+            });
+          };
+
+          // Cambia la hora de salida de un feriado puntual
+          const setSalidaFeriado = (fecha, salida) => {
+            setSpecialDays(prev => {
+              if (prev[fecha]?.tipo !== "feriado") return prev;
+              sbUpsertSingle("dias_especiales", {fecha, tipo:"feriado", salida}, "fecha");
+              return {...prev, [fecha]: {tipo:"feriado", salida}};
             });
           };
 
@@ -1810,7 +1821,7 @@ function AppMain({ session }) {
                               </div>
                             )}
                             {isFeriado && (
-                              <div style={{fontSize:10,color:"#b45309",marginBottom:8}}>hasta 14:00</div>
+                              <div style={{fontSize:10,color:"#b45309",marginBottom:8}}>hasta {sp?.salida || "14:00"}</div>
                             )}
                             {isLibre && (
                               <div style={{fontSize:10,background:"#fecaca",color:"#c53030",borderRadius:4,padding:"2px 7px",marginBottom:4,fontWeight:700,display:"inline-block"}}>
@@ -1827,30 +1838,21 @@ function AppMain({ session }) {
                                 AUS. INJUST.
                               </div>
                             )}
-                            {(() => {
-                              const isAusJust   = sp?.tipo === "aus_just";
-                              const isAusInjust = sp?.tipo === "aus_injust";
-                              return (
-                                <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                                  <button onClick={()=>toggleDay(fecha,"feriado")}
-                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isFeriado?"#f6d860":COL.border}`,borderRadius:5,cursor:"pointer",background:isFeriado?"#fde68a":"#fff",color:isFeriado?"#92400e":COL.textSub,fontFamily:SANS,fontWeight:isFeriado?700:400,textAlign:"left"}}>
-                                    {isFeriado ? "✓ Feriado" : "+ Feriado"}
-                                  </button>
-                                  <button onClick={()=>toggleDay(fecha,"libre")}
-                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isLibre?"#fca5a5":COL.border}`,borderRadius:5,cursor:"pointer",background:isLibre?"#fecaca":"#fff",color:isLibre?"#c53030":COL.textSub,fontFamily:SANS,fontWeight:isLibre?700:400,textAlign:"left"}}>
-                                    {isLibre ? "✓ Día libre" : "+ Día libre"}
-                                  </button>
-                                  <button onClick={()=>toggleDay(fecha,"aus_just")}
-                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isAusJust?"#c4b5fd":COL.border}`,borderRadius:5,cursor:"pointer",background:isAusJust?"#ede9fe":"#fff",color:isAusJust?"#7c3aed":COL.textSub,fontFamily:SANS,fontWeight:isAusJust?700:400,textAlign:"left"}}>
-                                    {isAusJust ? "✓ Aus. just." : "+ Aus. just."}
-                                  </button>
-                                  <button onClick={()=>toggleDay(fecha,"aus_injust")}
-                                    style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isAusInjust?"#fed7aa":COL.border}`,borderRadius:5,cursor:"pointer",background:isAusInjust?"#ffedd5":"#fff",color:isAusInjust?"#dc6b19":COL.textSub,fontFamily:SANS,fontWeight:isAusInjust?700:400,textAlign:"left"}}>
-                                    {isAusInjust ? "✓ Aus. injust." : "+ Aus. injust."}
-                                  </button>
-                                </div>
-                              );
-                            })()}
+                            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                              <button onClick={()=>toggleDay(fecha,"feriado")}
+                                style={{fontSize:10,padding:"3px 7px",border:`1px solid ${isFeriado?"#f6d860":COL.border}`,borderRadius:5,cursor:"pointer",background:isFeriado?"#fde68a":"#fff",color:isFeriado?"#92400e":COL.textSub,fontFamily:SANS,fontWeight:isFeriado?700:400,textAlign:"left"}}>
+                                {isFeriado ? "✓ Feriado" : "+ Feriado"}
+                              </button>
+                              {isFeriado && (
+                                <label style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#92400e"}}>
+                                  <span style={{whiteSpace:"nowrap"}}>Hasta</span>
+                                  <input type="time"
+                                    value={sp?.salida || "14:00"}
+                                    onChange={e=>setSalidaFeriado(fecha, e.target.value)}
+                                    style={{border:"1px solid #f6d860",borderRadius:5,padding:"2px 4px",fontFamily:MONO,fontSize:11,color:"#92400e",background:"#fffdf5",outline:"none",width:"100%"}}/>
+                                </label>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
