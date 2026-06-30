@@ -98,13 +98,23 @@ function minsToDisplay(m) {
 }
 
 // Tolerancia de 15 min para llegadas tarde (solo afecta el descuento en plata).
-// Hasta 15 min no se descuenta; pasados los 15 se cuenta por bloques de 15
-// desde cero (16-30=1, 30=2, 31-45=2, 45=3...).
+// La tolerancia se evalúa POR DÍA: cada día con ≤15 min de demora se perdona;
+// los días que pasan los 15 cuentan por bloques de 15 desde cero
+// (16-30=1, 30=2, 31-45=2, 45=3...). Las fracciones diarias se suman.
 const TOLERANCIA_DEMORA = 15;
-function fraccionesDemoraCalc(totalDemoraMin) {
-  const d = Math.round(totalDemoraMin || 0);
+
+// Fracciones de un solo día a partir de sus minutos de demora.
+function fraccionesDeUnDia(demoraMin) {
+  const d = Math.round(demoraMin || 0);
   if (d <= TOLERANCIA_DEMORA) return 0;
   return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
+}
+
+// Suma de fracciones de todos los días del rango (cada día con su propia tolerancia).
+// Recibe el array de cálculos diarios (cada uno con su campo .demora).
+function fraccionesDemoraCalc(calcsDelRango) {
+  if (!Array.isArray(calcsDelRango)) return 0;
+  return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.demora), 0);
 } 
 
 function extractEntradaSalida(row) {
@@ -2347,7 +2357,7 @@ function AppMain({ session }) {
               const totalDemoraMin  = empCalcs.reduce((s,r)=>s+(r.demora||0),0);
               const totalSalTempMin = empCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
               const horasExtra      = totalExtraMin / 60;
-              const fraccionesDem   = fraccionesDemoraCalc(totalDemoraMin);
+              const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
               const horasSalTemp    = totalSalTempMin / 60;
 
               const allFindeInRange = empCalcs.filter(r=>{const d=new Date(r.fecha+"T12:00:00").getDay();return d===0||d===6;});
@@ -2547,8 +2557,8 @@ function AppMain({ session }) {
           };
           const DIAS_CORTO = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
-          // Fracciones de 15 min de demoras, con tolerancia de 15 min
-          const fraccionesDemora = fraccionesDemoraCalc(totalDemoraMin);
+          // Fracciones de demora con tolerancia POR DÍA (cada día ≤15 min se perdona)
+          const fraccionesDemora = fraccionesDemoraCalc(rangeCalcs);
           // Horas de retiro anticipado (en horas, 2 decimales)
           const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
           // Horas extra — decimal para cálculos, HH:MM para mostrar
