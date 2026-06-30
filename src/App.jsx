@@ -236,6 +236,51 @@ function FieldInput({ label, prefix="$", note="", value, onChange }) {
   );
 }
 
+// Formulario para iniciar un nuevo período de liquidación para todos los empleados.
+function NuevoPeriodoForm({ MESES, defMonth, empCount, onCancel, onConfirm }) {
+  const [mes, setMes] = useState(defMonth); // formato "YYYY-MM"
+  const [y, m] = mes.split("-").map(Number);
+  const ultimoDia = new Date(y, m, 0).getDate();
+  const desde = `${mes}-01`;
+  const hasta = `${mes}-${String(ultimoDia).padStart(2,"0")}`;
+  const nombrePeriodo = `${MESES[m-1].toUpperCase()} ${y}`;
+
+  return (
+    <div style={{background:"#fef9f0",border:"1px solid #f6d860",borderRadius:12,padding:"18px 20px",marginBottom:20}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#92400e",marginBottom:6}}>Iniciar nuevo período para todos los empleados</div>
+      <div style={{fontSize:12,color:"#a16207",marginBottom:16,lineHeight:1.6}}>
+        Se aplicará <strong>{nombrePeriodo}</strong> ({desde} → {hasta}) a los {empCount} empleados con datos.
+        Se <strong>conservan</strong> los adelantos y los datos de la circular (sueldo, valores). Se <strong>resetean</strong> las
+        llegadas tarde y retiros editados a mano, las horas extra manuales, SAC, vacaciones y feriados del mes anterior.
+      </div>
+      <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:11,color:COL.textSub,fontWeight:500,marginBottom:5}}>Mes a liquidar</div>
+          <input type="month" value={mes} onChange={e=>setMes(e.target.value)}
+            style={{...INPUT_STYLE,padding:"8px 12px",fontFamily:SANS,fontSize:13}}/>
+        </div>
+        <div style={{fontSize:12,color:COL.textSub,paddingBottom:9}}>
+          → Período: <strong style={{color:"#92400e"}}>{nombrePeriodo}</strong>
+        </div>
+        <div style={{display:"flex",gap:8,marginLeft:"auto"}}>
+          <button onClick={()=>{
+            if(confirm(`¿Iniciar ${nombrePeriodo} para todos los empleados? Se borrarán los descuentos manuales, hs extra manuales, SAC, vacaciones y feriados del período anterior. Los adelantos y la circular se conservan.`)){
+              onConfirm(nombrePeriodo, desde, hasta);
+            }
+          }}
+            style={{background:"#b45309",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13}}>
+            Aplicar a todos
+          </button>
+          <button onClick={onCancel}
+            style={{background:"#fff",color:COL.textSub,border:`1px solid ${COL.border2}`,borderRadius:8,padding:"9px 16px",cursor:"pointer",fontFamily:SANS,fontSize:13}}>
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Convierte horas decimales (ej 2.75) a {h:2, m:45}
 function decimalToHM(dec) {
   const v = parseFloat(dec);
@@ -734,6 +779,7 @@ function AppMain({ session }) {
   const [circHist, setCircHist]   = useState([]);        // versiones archivadas de circulares
   const [histEmp, setHistEmp]     = useState(null);      // empNo cuyo histórico se ve abierto
   const [verPlanillaHist, setVerPlanillaHist] = useState(false); // planilla global de histórico
+  const [nuevoPeriodoOpen, setNuevoPeriodoOpen] = useState(false); // modal de nuevo período
   const fileRef = useRef();
 
   // ── Persist to localStorage as cache ────────────────────────────────────
@@ -894,7 +940,7 @@ function AppMain({ session }) {
     });
   };
 
-  // Archiva la versión actual de la circular de un empleado como copia histórica
+   // Archiva la versión actual de la circular de un empleado como copia histórica
   const archivarCircular = useCallback((empNo, motivo="manual") => {
     const datos = liqParams[String(empNo)];
     if (!datos || !datos.sueldoBasico) return false; // nada que archivar
@@ -905,6 +951,34 @@ function AppMain({ session }) {
     sbInsertCircHist(row);
     return true;
   }, [liqParams, employees]);
+
+  // Inicia un nuevo período de liquidación para TODOS los empleados:
+  // - setea periodo (ej "JUNIO 2026") y desde/hasta
+  // - resetea overrides del mes anterior (llegadas tarde, retiros, hs extra manual,
+  //   SAC, vacaciones, feriados, findeSel)
+  // - CONSERVA adelantos y todos los datos de la circular (sueldo, valores, etc.)
+  const iniciarPeriodo = useCallback((nombrePeriodo, desde, hasta) => {
+    // Campos a borrar de cada empleado al arrancar el período
+    const RESET = [
+      "descDemorasManual", "descSalTempManual",   // overrides de descuentos
+      "horasExtraManualHs", "horasExtraManualImp", // hs extra fuera del reloj
+      "sac", "vacaciones", "feriados",             // adicionales manuales
+      "findeSel",                                  // selección de findes
+    ];
+    setLiqParams(prev => {
+      const next = {};
+      for (const [key, datos] of Object.entries(prev)) {
+        const limpio = { ...datos };
+        for (const f of RESET) delete limpio[f];
+        // setear el período nuevo (adelantos y circular quedan intactos)
+        limpio.periodo = nombrePeriodo;
+        limpio.desde   = desde;
+        limpio.hasta   = hasta;
+        next[key] = limpio;
+      }
+      return next;
+    });
+  }, []);
 
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
   const filteredEmps=empList.filter(e=>{
@@ -2591,6 +2665,11 @@ function AppMain({ session }) {
                     <input type="date" value={hasta} onChange={e=>setP("hasta",e.target.value)} style={{...S.dateInput}}/>
                   </div>
                 </div>
+                <button onClick={()=>setNuevoPeriodoOpen(o=>!o)}
+                  style={{alignSelf:"flex-end",background:nuevoPeriodoOpen?COL.accentBg:"#fff",color:COL.accent,border:`1px solid ${COL.accent}`,borderRadius:8,padding:"9px 18px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0115-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 01-15 6.7L3 16"/></svg>
+                  Nuevo período
+                </button>
                 {selEmp&&(
                   <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
@@ -2599,6 +2678,26 @@ function AppMain({ session }) {
                   </button>
                 )}
               </div>
+
+              {/* ── Formulario "Nuevo período" ── */}
+              {nuevoPeriodoOpen && (()=>{
+                const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                const hoy = new Date();
+                const defMonth = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,"0")}`;
+                const empConDatos = Object.keys(liqParams).filter(k=>liqParams[k]?.sueldoBasico).length;
+                return (
+                  <NuevoPeriodoForm
+                    MESES={MESES}
+                    defMonth={defMonth}
+                    empCount={empConDatos}
+                    onCancel={()=>setNuevoPeriodoOpen(false)}
+                    onConfirm={(nombre, desde, hasta)=>{
+                      iniciarPeriodo(nombre, desde, hasta);
+                      setNuevoPeriodoOpen(false);
+                    }}
+                  />
+                );
+              })()}
 
               {!selEmp&&(
                 <div style={{padding:"60px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,background:COL.surface,borderRadius:12,border:`1px solid ${COL.border}`}}>
