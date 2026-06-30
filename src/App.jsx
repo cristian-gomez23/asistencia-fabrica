@@ -759,7 +759,7 @@ function AppMain({ session }) {
   const [sbWriteError, setSbWriteError] = useState(null); // {table, detail, at} último fallo de guardado
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState({text:"",ok:true});
-  const [recF, setRecF]           = useState({emp:"",fecha:""});
+  const [recF, setRecF]           = useState({emp:"",desde:"",hasta:""});
   const [empF, setEmpF]           = useState("");
   const [detalleEmp, setDetalleEmp] = useState(null); // empNo selected in Por empleado tab
   const [liqEmp, setLiqEmp]         = useState(null);   // empNo selected in Liquidación tab
@@ -994,7 +994,7 @@ function AppMain({ session }) {
   });
   const allRecs = [...records, ...manualRecords];
   const filteredRecs=allRecs
-    .filter(r=>(!recF.emp||r.nombre.toLowerCase().includes(recF.emp.toLowerCase())||String(r.empNo).includes(recF.emp))&&(!recF.fecha||r.fecha.includes(recF.fecha)))
+    .filter(r=>(!recF.emp||r.nombre.toLowerCase().includes(recF.emp.toLowerCase())||String(r.empNo).includes(recF.emp))&&(!recF.desde||r.fecha>=recF.desde)&&(!recF.hasta||r.fecha<=recF.hasta))
     .sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.empNo-b.empNo);
 
   const empSummary=empList.map(emp=>{
@@ -1193,10 +1193,16 @@ function AppMain({ session }) {
             <div style={{...S.filterBar,justifyContent:"space-between"}}>
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                 <input placeholder="Buscar empleado…" value={recF.emp} onChange={e=>setRecF(p=>({...p,emp:e.target.value}))} style={S.sInput}/>
-                <input type="date" value={recF.fecha} onChange={e=>setRecF(p=>({...p,fecha:e.target.value}))} style={S.dateInput}/>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:COL.textSub}}>
+                  Desde <input type="date" value={recF.desde} onChange={e=>setRecF(p=>({...p,desde:e.target.value}))} style={S.dateInput}/>
+                </label>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:COL.textSub}}>
+                  Hasta <input type="date" value={recF.hasta} onChange={e=>setRecF(p=>({...p,hasta:e.target.value}))} style={S.dateInput}/>
+                </label>
+                {(recF.desde||recF.hasta)&&<button onClick={()=>setRecF(p=>({...p,desde:"",hasta:""}))} style={S.cancelBtn}>Limpiar fechas</button>}
                 <span style={{color:COL.textFaint,fontSize:12}}>{filteredRecs.length} registros</span>
               </div>
-              <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.fecha||"",entrada:"",salida:""});}}
+              <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.desde||"",entrada:"",salida:""});}}
                 style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:15,lineHeight:1}}>+</span> Agregar registro
               </button>
