@@ -97,15 +97,7 @@ function minsToDisplay(m) {
   return `${s}${h}h${min > 0 ? String(min).padStart(2,"0") : ""}`;
 }
 
-// Tolerancia de 15 min para llegadas tarde (solo afecta el descuento en plata).
-// Hasta 15 min no se descuenta; pasados los 15 se cuenta por bloques de 15
-// desde cero (16-30=1, 30=2, 31-45=2, 45=3...).
-const TOLERANCIA_DEMORA = 15;
-function fraccionesDemoraCalc(totalDemoraMin) {
-  const d = Math.round(totalDemoraMin || 0);
-  if (d <= TOLERANCIA_DEMORA) return 0;
-  return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
-}
+ 
 
 function extractEntradaSalida(row) {
   const marks = [4,5,6,7].map(c=>parseTimeVal(row[c])).filter(v=>v!=null).sort((a,b)=>a-b);
