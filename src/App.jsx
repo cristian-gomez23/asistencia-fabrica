@@ -98,20 +98,14 @@ function minsToDisplay(m) {
 }
 
 // Tolerancia de 15 min para llegadas tarde (solo afecta el descuento en plata).
-// La tolerancia se evalúa POR DÍA: cada día con ≤15 min de demora se perdona;
-// los días que pasan los 15 cuentan por bloques de 15 desde cero
-// (16-30=1, 30=2, 31-45=2, 45=3...). Las fracciones diarias se suman.
+// La tolerancia se evalúa POR DÍA: cada día con ≤15 min se perdona; los días
+// que pasan los 15 cuentan por bloques de 15 desde cero (16-30=1, 31-45=2...).
 const TOLERANCIA_DEMORA = 15;
-
-// Fracciones de un solo día a partir de sus minutos de demora.
 function fraccionesDeUnDia(demoraMin) {
   const d = Math.round(demoraMin || 0);
   if (d <= TOLERANCIA_DEMORA) return 0;
   return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
 }
-
-// Suma de fracciones de todos los días del rango (cada día con su propia tolerancia).
-// Recibe el array de cálculos diarios (cada uno con su campo .demora).
 function fraccionesDemoraCalc(calcsDelRango) {
   if (!Array.isArray(calcsDelRango)) return 0;
   return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.demora), 0);
@@ -790,6 +784,7 @@ function AppMain({ session }) {
   const [histEmp, setHistEmp]     = useState(null);      // empNo cuyo histórico se ve abierto
   const [verPlanillaHist, setVerPlanillaHist] = useState(false); // planilla global de histórico
   const [nuevoPeriodoOpen, setNuevoPeriodoOpen] = useState(false); // modal de nuevo período
+  const [resumenMes, setResumenMes] = useState(""); // "YYYY-MM" filtro de mes en Resumen
   const fileRef = useRef();
 
   // ── Persist to localStorage as cache ────────────────────────────────────
@@ -1716,14 +1711,12 @@ function AppMain({ session }) {
                 sbDelete("dias_especiales", fecha, "fecha");
                 return u;
               }
-              // Al marcar feriado, precargar salida 14:00
               const salida = tipo === "feriado" ? "14:00" : undefined;
               sbUpsertSingle("dias_especiales", {fecha, tipo, salida: salida||null}, "fecha");
               return {...prev, [fecha]: {tipo, salida}};
             });
           };
 
-          // Cambia la hora de salida de un feriado puntual
           const setSalidaFeriado = (fecha, salida) => {
             setSpecialDays(prev => {
               if (prev[fecha]?.tipo !== "feriado") return prev;
@@ -2322,13 +2315,20 @@ function AppMain({ session }) {
         })()}
 
 
-        {/* ── 7 LIQUIDACIÓN ── */}
-                {/* ── 6 RESUMEN LIQUIDACIONES ── */}
+        {/* ── 6 RESUMEN LIQUIDACIONES ── */}
         {tab===6&&(()=>{
           const activeEmps = empList.filter(e=>e.activo!==false);
           const getP = (empNo) => liqParams[String(empNo)] || {};
 
           const fmt$ = n => n ? `$${Math.round(Number(n)).toLocaleString("es-AR")}` : "—";
+
+          const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+          const mesDesde = resumenMes ? `${resumenMes}-01` : null;
+          const mesHasta = resumenMes
+            ? `${resumenMes}-${String(new Date(+resumenMes.slice(0,4), +resumenMes.slice(5,7), 0).getDate()).padStart(2,"0")}`
+            : null;
+          const mesLabel = resumenMes ? `${MESES[+resumenMes.slice(5,7)-1]} ${resumenMes.slice(0,4)}` : null;
+          const mesesDisponibles = [...new Set([...records,...manualRecords].map(r=>r.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
 
           // Calcular totales de liquidación para cada empleado activo con datos
           const filas = activeEmps
@@ -2348,15 +2348,13 @@ function AppMain({ session }) {
               const sac           = parseFloat(p.sac           || 0);
               const vacaciones    = parseFloat(p.vacaciones    || 0);
 
-              const desde = p.desde || "";
-              const hasta = p.hasta || "";
+              const desde = mesDesde || p.desde || "";
+              const hasta = mesHasta || p.hasta || "";
 
-              // Calcular desde registros de asistencia
               const empCalcs = (empSummary.find(s=>s.emp.empNo===emp.empNo)?.calcs || [])
                 .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
 
               const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
-              const totalDemoraMin  = empCalcs.reduce((s,r)=>s+(r.demora||0),0);
               const totalSalTempMin = empCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
               const horasExtra      = totalExtraMin / 60;
               const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
@@ -2366,7 +2364,6 @@ function AppMain({ session }) {
               const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
               const diasFinde       = findeSel.size;
 
-              // Horas extra manuales (mismo cálculo que Liquidación)
               const horasExtraManualHs  = parseFloat(p.horasExtraManualHs  || 0);
               const horasExtraManualImp = parseFloat(p.horasExtraManualImp || 0);
               const importeExtraManual  = horasExtraManualImp > 0
@@ -2379,7 +2376,6 @@ function AppMain({ session }) {
               const importeFinde     = valorDiaFinde * diasFinde;
               const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
 
-              // Descuentos: respetar overrides manuales de Liquidación (vínculo bidireccional)
               const descDemorasCalc = (valorHora / 4) * fraccionesDem;
               const descSalTempCalc = valorHora * horasSalTemp;
               const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
@@ -2398,6 +2394,7 @@ function AppMain({ session }) {
                 ingreso:   p.ingreso || emp.ingreso || "",
                 sueldoBasico,
                 totalAdicionales,
+                sac,
                 totalDesc,
                 adelanto,
                 subtotal,
@@ -2407,6 +2404,7 @@ function AppMain({ session }) {
 
           const totBasico     = filas.reduce((s,f)=>s+f.sueldoBasico,0);
           const totAdicional  = filas.reduce((s,f)=>s+f.totalAdicionales,0);
+          const totSac        = filas.reduce((s,f)=>s+f.sac,0);
           const totDesc       = filas.reduce((s,f)=>s+f.totalDesc,0);
           const totAdelanto   = filas.reduce((s,f)=>s+f.adelanto,0);
           const totSubtotal   = filas.reduce((s,f)=>s+f.subtotal,0);
@@ -2418,17 +2416,17 @@ function AppMain({ session }) {
             borderBottom:`1px solid ${COL.border}`,whiteSpace:"nowrap",fontFamily:MONO,fontSize:12});
 
           return (
-            <div style={{maxWidth:1100}}>
+            <div style={{maxWidth:1200}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                 <div>
                   <H2>Resumen de liquidaciones</H2>
-                  <p style={S.body}>Resumen calculado a partir de los datos de Circular y la asistencia del período configurado en Liquidación.</p>
+                  <p style={S.body}>Resumen calculado a partir de los datos de Circular y la asistencia del período seleccionado.</p>
                 </div>
                 {filas.length>0&&(
                   <button onClick={()=>{
                     const headers = [
                       ["empNo","N°"],["nombre","Empleado"],["area","Área"],["ingreso","Ingreso"],
-                      ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],
+                      ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],["sac","SAC"],
                       ["totalDesc","Desc. hs/días"],["adelanto","Adelantos"],["subtotal","Subtotal"],
                     ];
                     const rows = filas.map(f=>({
@@ -2436,17 +2434,46 @@ function AppMain({ session }) {
                       ingreso:f.ingreso?new Date(f.ingreso+"T12:00:00").toLocaleDateString("es-AR"):"",
                       sueldoBasico:Math.round(f.sueldoBasico),
                       totalAdicionales:Math.round(f.totalAdicionales),
+                      sac:Math.round(f.sac),
                       totalDesc:Math.round(f.totalDesc),
                       adelanto:Math.round(f.adelanto),
                       subtotal:Math.round(f.subtotal),
                     }));
                     rows.push({empNo:"",nombre:`TOTAL (${filas.length})`,area:"",ingreso:"",
-                      sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),
+                      sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),sac:Math.round(totSac),
                       totalDesc:Math.round(totDesc),adelanto:Math.round(totAdelanto),subtotal:Math.round(totSubtotal)});
-                    exportXLSX(rows, headers, "Resumen", "resumen_liquidaciones.xlsx");
+                    const sufijo = resumenMes ? `_${resumenMes}` : "";
+                    exportXLSX(rows, headers, "Resumen", `resumen_liquidaciones${sufijo}.xlsx`);
                   }} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
                   </button>
+                )}
+              </div>
+
+              {/* Selector de mes */}
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:18,background:COL.surface,padding:"12px 16px",borderRadius:10,border:`1px solid ${COL.border}`}}>
+                <span style={{fontSize:12,color:COL.textSub,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>Período</span>
+                <input type="month" value={resumenMes} onChange={e=>setResumenMes(e.target.value)}
+                  style={{...INPUT_STYLE,padding:"7px 11px",fontFamily:SANS,fontSize:13}}/>
+                {mesLabel
+                  ? <span style={{fontSize:13,color:COL.accent,fontWeight:600}}>{mesLabel}</span>
+                  : <span style={{fontSize:12,color:"#b45309"}}>Sin filtro — usa el rango individual de cada liquidación (puede mezclar meses)</span>}
+                {resumenMes && <button onClick={()=>setResumenMes("")} style={{...S.cancelBtn,marginLeft:4}}>Quitar filtro</button>}
+                {mesesDisponibles.length>0 && (
+                  <div style={{display:"flex",gap:6,marginLeft:"auto",flexWrap:"wrap"}}>
+                    {mesesDisponibles.slice(0,6).map(m=>{
+                      const lbl = `${MESES[+m.slice(5,7)-1].slice(0,3)} ${m.slice(2,4)}`;
+                      const on = resumenMes===m;
+                      return (
+                        <button key={m} onClick={()=>setResumenMes(m)}
+                          style={{fontSize:11,padding:"4px 10px",borderRadius:20,cursor:"pointer",fontFamily:SANS,
+                            border:`1px solid ${on?COL.accent:COL.border2}`,background:on?COL.accentBg:"#fff",
+                            color:on?COL.accent:COL.textSub,fontWeight:on?600:400}}>
+                          {lbl}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
@@ -2467,6 +2494,7 @@ function AppMain({ session }) {
                         <th style={{...S.th,textAlign:"left"}}>Ingreso</th>
                         <th style={thR}>Sueldo básico</th>
                         <th style={thR}>Adicionales</th>
+                        <th style={thR}>SAC</th>
                         <th style={{...thR,color:"#c53030"}}>Desc. hs/días</th>
                         <th style={{...thR,color:"#b45309"}}>Adelantos</th>
                         <th style={{...thR,color:"#276749",fontWeight:700}}>Subtotal</th>
@@ -2488,6 +2516,7 @@ function AppMain({ session }) {
                           </td>
                           <td style={tdR()}>{fmt$(f.sueldoBasico)}</td>
                           <td style={tdR("#276749")}>{f.totalAdicionales>0?fmt$(f.totalAdicionales):"—"}</td>
+                          <td style={tdR()}>{f.sac>0?fmt$(f.sac):"—"}</td>
                           <td style={tdR("#c53030")}>{f.totalDesc>0?fmt$(f.totalDesc):"—"}</td>
                           <td style={tdR("#b45309")}>{f.adelanto>0?fmt$(f.adelanto):"—"}</td>
                           <td style={{...tdR("#276749"),fontWeight:700,fontSize:13}}>{fmt$(f.subtotal)}</td>
@@ -2497,10 +2526,11 @@ function AppMain({ session }) {
                     <tfoot>
                       <tr style={{background:"#f0f4fa",borderTop:`2px solid ${COL.border2}`}}>
                         <td colSpan={3} style={{padding:"10px 14px",fontWeight:700,fontSize:13,color:COL.text}}>
-                          TOTAL — {filas.length} empleados
+                          TOTAL — {filas.length} empleados{mesLabel?` · ${mesLabel}`:""}
                         </td>
                         <td style={{...tdR(),fontWeight:700,fontSize:13}}>{fmt$(totBasico)}</td>
                         <td style={{...tdR("#276749"),fontWeight:700}}>{totAdicional>0?fmt$(totAdicional):"—"}</td>
+                        <td style={{...tdR(),fontWeight:700}}>{totSac>0?fmt$(totSac):"—"}</td>
                         <td style={{...tdR("#c53030"),fontWeight:700}}>{totDesc>0?fmt$(totDesc):"—"}</td>
                         <td style={{...tdR("#b45309"),fontWeight:700}}>{totAdelanto>0?fmt$(totAdelanto):"—"}</td>
                         <td style={{...tdR("#276749"),fontWeight:700,fontSize:14}}>{fmt$(totSubtotal)}</td>
@@ -2559,7 +2589,7 @@ function AppMain({ session }) {
           };
           const DIAS_CORTO = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 
-          // Fracciones de demora con tolerancia POR DÍA (cada día ≤15 min se perdona)
+          // Fracciones de demora con tolerancia POR DÍA
           const fraccionesDemora = fraccionesDemoraCalc(rangeCalcs);
           // Horas de retiro anticipado (en horas, 2 decimales)
           const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
