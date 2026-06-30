@@ -107,16 +107,6 @@ function fraccionesDemoraCalc(totalDemoraMin) {
   return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
 }
 
-// Tolerancia de 15 min para llegadas tarde.
-// Hasta 15 min no se descuenta; pasados los 15 se cuenta por bloques de 15
-// desde cero (16-30=1, 30=2, 31-45=2, 45=3...).
-const TOLERANCIA_DEMORA = 15;
-function fraccionesDemora(totalDemoraMin) {
-  const d = Math.round(totalDemoraMin || 0);
-  if (d <= TOLERANCIA_DEMORA) return 0;
-  return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
-}
-
 function extractEntradaSalida(row) {
   const marks = [4,5,6,7].map(c=>parseTimeVal(row[c])).filter(v=>v!=null).sort((a,b)=>a-b);
   return {
