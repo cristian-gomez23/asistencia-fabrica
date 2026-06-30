@@ -109,6 +109,12 @@ function fraccionesDeUnDia(demoraMin) {
 function fraccionesDemoraCalc(calcsDelRango) {
   if (!Array.isArray(calcsDelRango)) return 0;
   return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.demora), 0);
+}
+// Retiros anticipados: misma lógica que las tardanzas (por día, 15 de tolerancia,
+// fracciones de 15 min). Cada fracción vale valorHora/4.
+function fraccionesSalTempCalc(calcsDelRango) {
+  if (!Array.isArray(calcsDelRango)) return 0;
+  return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.salTemprana), 0);
 } 
 
 function extractEntradaSalida(row) {
@@ -305,7 +311,7 @@ function exportLiqPDF(d) {
   const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt,
     importeExtras, importeExtraManual, horasExtraManualDisplay, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
-    descDemoras, horasSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
+    descDemoras, fraccionesSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
     totalACobrar, diasTrabajados, nombreDisplay, fmt } = d;
 
   const nombre = selEmp.nombre.toUpperCase();
@@ -396,7 +402,7 @@ function exportLiqPDF(d) {
           ${row("SUELDO + ADICIONALES","","",fmt(subtotal),"total-line","#1a3a6b")}
           ${row("DESCUENTOS","","","","section")}
           ${descDemoras>0?row("Llegadas tarde (fracc. de 15 min)",fraccionesDemora,`${fmt(valorHora)}/4`,fmt(descDemoras),"detail","#c53030",true):row("Llegadas tarde (fracc. de 15 min)","—","—","—","muted","",true)}
-          ${descSalTemp>0?row("Retiros anticipados (x hora)",horasSalTemp,fmt(valorHora),fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (x hora)","—","—","—","muted","",true)}
+          ${descSalTemp>0?row("Retiros anticipados (fracc. de 15 min)",fraccionesSalTemp,`${fmt(valorHora)}/4`,fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (fracc. de 15 min)","—","—","—","muted","",true)}
           ${row("Total descuentos","","",totalDescuentos>0?fmt(totalDescuentos):"—","sub",totalDescuentos>0?"#c53030":"")}
           ${(adelantos||[]).filter(a=>parseFloat(a.monto)>0).length
             ? row("ADELANTOS","","","","section","#b45309")
@@ -2361,10 +2367,9 @@ function AppMain({ session }) {
                 .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
 
               const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
-              const totalSalTempMin = empCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
               const horasExtra      = totalExtraMin / 60;
               const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
-              const horasSalTemp    = totalSalTempMin / 60;
+              const fraccionesSt    = fraccionesSalTempCalc(empCalcs);
 
               const allFindeInRange = empCalcs.filter(r=>{const d=new Date(r.fecha+"T12:00:00").getDay();return d===0||d===6;});
               const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
@@ -2383,7 +2388,7 @@ function AppMain({ session }) {
               const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
 
               const descDemorasCalc = (valorHora / 4) * fraccionesDem;
-              const descSalTempCalc = valorHora * horasSalTemp;
+              const descSalTempCalc = (valorHora / 4) * fraccionesSt;
               const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
                 ? parseFloat(p.descDemorasManual) : null;
               const descSalTempManual = p.descSalTempManual !== undefined && p.descSalTempManual !== ""
@@ -2597,7 +2602,9 @@ function AppMain({ session }) {
 
           // Fracciones de demora con tolerancia POR DÍA
           const fraccionesDemora = fraccionesDemoraCalc(rangeCalcs);
-          // Horas de retiro anticipado (en horas, 2 decimales)
+          // Retiros anticipados: misma lógica que tardanzas (fracciones de 15 min)
+          const fraccionesSalTemp = fraccionesSalTempCalc(rangeCalcs);
+          // (se mantiene el total en horas solo por compatibilidad de display)
           const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
           // Horas extra — decimal para cálculos, HH:MM para mostrar
           const horasExtra        = parseFloat((totalExtraMin / 60).toFixed(10)); // full precision for math
@@ -2635,7 +2642,7 @@ function AppMain({ session }) {
 
           // Descuentos — pueden sobreescribirse manualmente
           const descDemorasCalc   = (valorHora / 4) * fraccionesDemora;
-          const descSalTempCalc   = valorHora * horasSalTemp;
+          const descSalTempCalc   = (valorHora / 4) * fraccionesSalTemp;
           const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
             ? parseFloat(p.descDemorasManual)
             : null;
@@ -2646,8 +2653,8 @@ function AppMain({ session }) {
           const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
 
           // Cantidades a mostrar: si el descuento se borró (importe 0), no mostrar unidades
-          const fraccionesDemoraDisp = descDemoras > 0 ? fraccionesDemora : "—";
-          const horasSalTempDisp     = descSalTemp > 0 ? horasSalTemp     : "—";
+          const fraccionesDemoraDisp = descDemoras > 0 ? fraccionesDemora  : "—";
+          const fraccionesSalTempDisp= descSalTemp > 0 ? fraccionesSalTemp : "—";
 
           // Calculations — básico manda, adicionales son extras sobre él
           const importeSueldo    = sueldoBasico;
@@ -2719,7 +2726,7 @@ function AppMain({ session }) {
                   Nuevo período
                 </button>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,horasSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -3008,7 +3015,7 @@ function AppMain({ session }) {
                           ["Días finde trabajados",     diasFinde,            "días"],
                           ["Horas extra",               horasExtraDisplay,    ""],
                           ["Demoras (fracc. 15 min)",   fraccionesDemora,     "fracciones"],
-                          ["Retiros anticipados",       horasSalTemp,         "hs"],
+                          ["Retiros (fracc. 15 min)",   fraccionesSalTemp,    "fracciones"],
                           ...(ausJust.length   ? [["Ausencias justificadas",   ausJust.length,   "días — no descuenta"]] : []),
                           ...(ausInjust.length ? [["⚠ Ausencias injustificadas", ausInjust.length, "días — revisar descuento"]] : []),
                         ];
@@ -3058,7 +3065,7 @@ function AppMain({ session }) {
 
                           <LiqRow label="DESCUENTOS" cantidad="" valor="" importe="" bold separator />
                           <LiqRow label={`Llegadas tarde${descDemorasManual!==null?" ✎":""}`} indent cantidad={fraccionesDemoraDisp} valor={descDemoras?`${fmt(valorHora)}/4`:"—"} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
-                          <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={horasSalTempDisp} valor={descSalTemp?fmt(valorHora):"—"} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
+                          <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={fraccionesSalTempDisp} valor={descSalTemp?`${fmt(valorHora)}/4`:"—"} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
                           <LiqRow label="Total descuentos" cantidad="" valor="" importe={totalDescuentos?fmt(totalDescuentos):"—"} bold color="#c53030" separator />
 
                           <LiqRow label="Adelantos" cantidad="" valor="" importe="" bold color="#b45309" separator />
