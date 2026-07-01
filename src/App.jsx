@@ -796,15 +796,34 @@ function AppMain({ session }) {
   // ── Persist to localStorage as cache ────────────────────────────────────
   useEffect(()=>saveLS("ar3",records),[records]);
   useEffect(()=>saveLS("ae3",employees),[employees]);
+  // Guarda liqParams en cache local siempre, y sincroniza a Supabase SOLO los
+  // empleados que realmente cambiaron, con un debounce para no disparar una
+  // ráfaga de peticiones por cada tecla (eso rompía la conexión HTTP/2).
+  const prevLiqRef = useRef({});
+  const liqSyncTimer = useRef(null);
   useEffect(()=>{
     saveLS("liq_params",liqParams);
-    // Sync cada cambio a Supabase
-    Object.entries(liqParams).forEach(([empNo, datos]) => {
+
+    const prev = prevLiqRef.current;
+    const cambiados = [];
+    for (const [empNo, datos] of Object.entries(liqParams)) {
       const n = parseInt(empNo);
-      if (!isNaN(n) && n > 0) {
-        sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
+      if (isNaN(n) || n <= 0) continue;
+      if (JSON.stringify(prev[empNo]) !== JSON.stringify(datos)) {
+        cambiados.push([n, datos]);
       }
-    });
+    }
+    if (cambiados.length === 0) return;
+
+    clearTimeout(liqSyncTimer.current);
+    liqSyncTimer.current = setTimeout(async () => {
+      for (const [n, datos] of cambiados) {
+        await sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
+      }
+      prevLiqRef.current = JSON.parse(JSON.stringify(liqParams));
+    }, 700);
+
+    return () => clearTimeout(liqSyncTimer.current);
   },[liqParams]);
   useEffect(()=>saveLS("sp_days",specialDays),[specialDays]);
   useEffect(()=>saveLS("man_sal",manualSalidas),[manualSalidas]);
@@ -859,6 +878,7 @@ function AppMain({ session }) {
         const map = {};
         for (const row of liqRows) map[String(row.emp_no)] = row.datos;
         setLiqParams(map);
+        prevLiqRef.current = JSON.parse(JSON.stringify(map));
       }
       if (histRows?.length) setCircHist(histRows);
       setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
