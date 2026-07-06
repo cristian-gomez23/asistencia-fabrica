@@ -208,9 +208,6 @@ function detectSchedule(recs) {
   return { entrada:minsToHHMM(ents[Math.floor(ents.length/2)]), salida:sals.length?minsToHHMM(sals[Math.floor(sals.length/2)]):"16:30" };
 }
 
-function loadLS(key, fb) { try { const r=localStorage.getItem(key); if(r) return JSON.parse(r); } catch {} return fb; }
-function saveLS(key, v)  { try { localStorage.setItem(key,JSON.stringify(v)); } catch {} }
-
 const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : s;
 
 const COL = {
@@ -695,6 +692,7 @@ function rowToRec(r) {
     fecha: r.fecha, entrada: r.entrada, salida: r.salida,
     soloEntrada: r.solo_entrada, manual: r.manual,
     observacion: r.observacion || null,
+    ausencia: r.ausencia || null,
   };
 }
 
@@ -747,16 +745,8 @@ const TABS = ["Importar","Registros","Empleados","Por empleado","Calendario","Ci
 
 function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
-  const [records, setRecords]     = useState(()=>loadLS("ar3",[]));
-  const [employees, setEmployees] = useState(()=>{
-    const saved = loadLS("ae3", null);
-    if (saved) {
-      const migrated = {};
-      for (const [k,v] of Object.entries(saved)) migrated[k] = { tipo:"operario", ...v };
-      return migrated;
-    }
-    return makeDefaultEmployees();
-  });
+  const [records, setRecords]     = useState([]);
+  const [employees, setEmployees] = useState(()=>makeDefaultEmployees());
   const [empTipoF, setEmpTipoF] = useState("todos");
   const [empActivoF, setEmpActivoF] = useState("todos"); // "todos" | "activo" | "inactivo"
   const [sbLoading, setSbLoading] = useState(false);
@@ -772,16 +762,13 @@ function AppMain({ session }) {
   const [circularF, setCircularF]   = useState("");      // filter in Circular tab
   const [circularEdit, setCircularEdit] = useState(null); // empNo being edited in Circular
   const [circularDraft, setCircularDraft] = useState({});
-  const [specialDays, setSpecialDays] = useState(()=>loadLS("sp_days",{})); // fecha→{tipo}
-  const [manualSalidas, setManualSalidas] = useState(()=>loadLS("man_sal",{})); // id→salida manual
-  const [manualRecords, setManualRecords] = useState(()=>loadLS("man_rec",[]));   // fully manual records
+  const [specialDays, setSpecialDays] = useState({});       // fecha→{tipo}
+  const [manualSalidas, setManualSalidas] = useState({});   // id→salida manual
+  const [manualRecords, setManualRecords] = useState([]);   // registros 100% manuales
   const [editingCell, setEditingCell]     = useState(null); // {id, field}
   const [addingRec, setAddingRec]         = useState(false);
   const [newRec, setNewRec]               = useState({empNo:"",fecha:"",entrada:"",salida:"",observacion:"",ausencia:""});
-  const [liqParams, setLiqParams]   = useState(() => {
-    try { const r = localStorage.getItem("liq_params"); if (r) return JSON.parse(r); } catch {}
-    return {};
-  });
+  const [liqParams, setLiqParams]   = useState({});
   const [editingEmp, setEditingEmp] = useState(null);
   const [editDraft, setEditDraft]   = useState({});
   const [bulkH, setBulkH]         = useState({entrada:"06:00",salida:"16:30"});
@@ -793,31 +780,30 @@ function AppMain({ session }) {
   const [resumenMes, setResumenMes] = useState(""); // "YYYY-MM" filtro de mes en Resumen
   const fileRef = useRef();
 
-  // ── Persist to localStorage as cache ────────────────────────────────────
-  useEffect(()=>saveLS("ar3",records),[records]);
-  useEffect(()=>saveLS("ae3",employees),[employees]);
-  // Guarda liqParams en cache local siempre, y sincroniza a Supabase SOLO los
-  // empleados que realmente cambiaron, con debounce para no disparar ráfagas.
-  // FIX: un empleado se marca como sincronizado ÚNICAMENTE si Supabase
-  // confirmó la escritura (sbUpsertSingle devuelve true). Si falla, queda
-  // pendiente y se reintenta automáticamente cada 5 segundos.
-  const prevLiqRef   = useRef({});
-  const liqSyncTimer = useRef(null);
-  const liqParamsRef = useRef(liqParams);
+  // ── Sincronización de liqParams con Supabase (única persistencia) ────────
+  // No hay cache local. La cola de pendientes vive solo en memoria: si un
+  // upsert falla se reintenta cada 5s mientras la pestaña esté abierta, y
+  // si intentan cerrar/refrescar con pendientes, el navegador avisa.
+  const prevLiqRef    = useRef({});   // último estado confirmado por el servidor
+  const liqSyncTimer  = useRef(null);
+  const liqParamsRef  = useRef(liqParams);
+  const liqPendingRef = useRef({});   // { empNo: true } upserts sin confirmar
+  const liqReadyRef   = useRef(!SB_URL || !SB_KEY);
 
   const flushLiqPending = useCallback(async () => {
+    if (!liqReadyRef.current) return; // esperar la carga inicial de Supabase
     const current = liqParamsRef.current;
-    const prev    = prevLiqRef.current;
     let huboFallo = false;
-    for (const [key, datos] of Object.entries(current)) {
+    for (const key of Object.keys({ ...liqPendingRef.current })) {
       const n = parseInt(key);
-      if (isNaN(n) || n <= 0) continue;
-      if (JSON.stringify(prev[key]) === JSON.stringify(datos)) continue; // sin cambios
+      const datos = current[key];
+      if (isNaN(n) || n <= 0 || datos === undefined) { delete liqPendingRef.current[key]; continue; }
       const ok = await sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
       if (ok) {
         prevLiqRef.current[key] = JSON.parse(JSON.stringify(datos));
+        delete liqPendingRef.current[key];
       } else {
-        huboFallo = true; // NO se marca como synced → se reintenta
+        huboFallo = true;
       }
     }
     if (huboFallo) {
@@ -828,16 +814,24 @@ function AppMain({ session }) {
 
   useEffect(() => {
     liqParamsRef.current = liqParams;
-    saveLS("liq_params", liqParams);
+    for (const [key, datos] of Object.entries(liqParams)) {
+      if (JSON.stringify(prevLiqRef.current[key]) !== JSON.stringify(datos)) {
+        liqPendingRef.current[key] = true;
+      }
+    }
+    if (!Object.keys(liqPendingRef.current).length) return;
     clearTimeout(liqSyncTimer.current);
     liqSyncTimer.current = setTimeout(flushLiqPending, 700);
-    // OJO: sin "return () => clearTimeout(...)" a propósito. Ese cleanup
-    // cancelaba el upsert pendiente al hacer logout/refresh dentro de los
-    // 700ms y el cambio nunca llegaba a Supabase.
   }, [liqParams, flushLiqPending]);
-  useEffect(()=>saveLS("sp_days",specialDays),[specialDays]);
-  useEffect(()=>saveLS("man_sal",manualSalidas),[manualSalidas]);
-  useEffect(()=>saveLS("man_rec",manualRecords),[manualRecords]);
+
+  // Aviso del navegador si cierran/refrescan con cambios aún no confirmados
+  useEffect(() => {
+    const warn = (e) => {
+      if (Object.keys(liqPendingRef.current).length) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   // ── Registrar handler global de errores de escritura ─────────────────────
   useEffect(()=>{
@@ -847,6 +841,14 @@ function AppMain({ session }) {
     });
     return ()=>setSbWriteErrorHandler(null);
   },[]);
+
+  // Limpieza única: borrar restos de la persistencia local anterior
+  useEffect(() => {
+    for (const k of ["ar3","ae3","liq_params","sp_days","man_sal","man_rec","liq_pending"]) {
+      try { localStorage.removeItem(k); } catch {}
+    }
+  }, []);
+
 
   // ── Load from Supabase on mount ──────────────────────────────────────────
   useEffect(()=>{
@@ -864,7 +866,11 @@ function AppMain({ session }) {
       if (regs?.length) {
         const byId={};
         for(const r of regs) byId[r.id]=rowToRec(r);
-        setRecords(Object.values(byId));
+        const todos = Object.values(byId);
+        // Los registros manuales viven en la misma tabla con manual=true.
+        // Antes venían de localStorage y se duplicaban con los del server.
+        setRecords(todos.filter(r=>!r.manual));
+        setManualRecords(todos.filter(r=>r.manual));
       }
       if (emps?.length) {
         const map={...makeDefaultEmployees()};
@@ -885,39 +891,46 @@ function AppMain({ session }) {
         setManualSalidas(prev=>({...prev,...salMap,...entMap}));
       }
       {
+        // SERVIDOR GANA: el estado se reemplaza por lo de Supabase. Solo
+        // sobreviven las ediciones propias en vuelo (cola de pendientes).
         const serverMap = {};
         for (const row of (liqRows || [])) serverMap[String(row.emp_no)] = row.datos;
         setLiqParams(local => {
-          // MERGE en vez de reemplazo total. Antes: setLiqParams(map) pisaba
-          // TODO el estado con lo del servidor y borraba cualquier circular
-          // que estuviera solo en localStorage (escrituras que fallaron,
-          // ediciones hechas mientras cargaba, etc.).
           const merged = { ...serverMap };
-          for (const [key, datos] of Object.entries(local)) {
-            if (JSON.stringify(serverMap[key]) !== JSON.stringify(datos)) {
-              merged[key] = datos; // conservar el cambio local pendiente
-            }
+          for (const key of Object.keys(liqPendingRef.current)) {
+            if (local[key] !== undefined) merged[key] = local[key];
           }
           return merged;
         });
-        // prevLiqRef queda con la foto DEL SERVIDOR (no del merge): así todo
-        // lo local que difiera se detecta como "pendiente" y flushLiqPending
-        // lo re-sube automáticamente en el próximo ciclo.
         prevLiqRef.current = JSON.parse(JSON.stringify(serverMap));
+        liqReadyRef.current = true;
+        if (Object.keys(liqPendingRef.current).length) {
+          clearTimeout(liqSyncTimer.current);
+          liqSyncTimer.current = setTimeout(flushLiqPending, 700);
+        }
       }
       if (histRows?.length) setCircHist(histRows);
       setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
-    }).catch((err)=>{ console.error("Supabase load error:", err); setSbLoading(false); setSbStatus("error"); });
+    }).catch((err)=>{ console.error("Supabase load error:", err); liqReadyRef.current = true; setSbLoading(false); setSbStatus("error"); });
   },[]);
 
   // ── Realtime subscriptions ───────────────────────────────────────────────
   useEffect(()=>{
     if (!SB_URL || !SB_KEY) return;
 
+    const applyReg = (row) => {
+      const rec = rowToRec(row);
+      if (rec.manual) {
+        setManualRecords(p=>[...p.filter(x=>x.id!==rec.id), rec]);
+        setRecords(p=>p.filter(x=>x.id!==rec.id));
+      } else {
+        setRecords(p=>{const m={};for(const x of p)m[x.id]=x;m[rec.id]=rec;return Object.values(m);});
+      }
+    };
     const unsubRegs = sbSubscribe("registros",
-      (r)=>setRecords(p=>{const m={};for(const x of p)m[x.id]=x;m[r.id]=rowToRec(r);return Object.values(m);}),
-      (r)=>setRecords(p=>p.map(x=>x.id===r.id?{...x,...rowToRec(r)}:x)),
-      (r)=>setRecords(p=>p.filter(x=>x.id!==r.id))
+      applyReg,
+      applyReg,
+      (r)=>{ setRecords(p=>p.filter(x=>x.id!==r.id)); setManualRecords(p=>p.filter(x=>x.id!==r.id)); }
     );
 
     const unsubEmps = sbSubscribe("empleados",
