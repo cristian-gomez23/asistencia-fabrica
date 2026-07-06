@@ -797,34 +797,44 @@ function AppMain({ session }) {
   useEffect(()=>saveLS("ar3",records),[records]);
   useEffect(()=>saveLS("ae3",employees),[employees]);
   // Guarda liqParams en cache local siempre, y sincroniza a Supabase SOLO los
-  // empleados que realmente cambiaron, con un debounce para no disparar una
-  // ráfaga de peticiones por cada tecla (eso rompía la conexión HTTP/2).
-  const prevLiqRef = useRef({});
+  // empleados que realmente cambiaron, con debounce para no disparar ráfagas.
+  // FIX: un empleado se marca como sincronizado ÚNICAMENTE si Supabase
+  // confirmó la escritura (sbUpsertSingle devuelve true). Si falla, queda
+  // pendiente y se reintenta automáticamente cada 5 segundos.
+  const prevLiqRef   = useRef({});
   const liqSyncTimer = useRef(null);
-  useEffect(()=>{
-    saveLS("liq_params",liqParams);
+  const liqParamsRef = useRef(liqParams);
 
-    const prev = prevLiqRef.current;
-    const cambiados = [];
-    for (const [empNo, datos] of Object.entries(liqParams)) {
-      const n = parseInt(empNo);
+  const flushLiqPending = useCallback(async () => {
+    const current = liqParamsRef.current;
+    const prev    = prevLiqRef.current;
+    let huboFallo = false;
+    for (const [key, datos] of Object.entries(current)) {
+      const n = parseInt(key);
       if (isNaN(n) || n <= 0) continue;
-      if (JSON.stringify(prev[empNo]) !== JSON.stringify(datos)) {
-        cambiados.push([n, datos]);
+      if (JSON.stringify(prev[key]) === JSON.stringify(datos)) continue; // sin cambios
+      const ok = await sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
+      if (ok) {
+        prevLiqRef.current[key] = JSON.parse(JSON.stringify(datos));
+      } else {
+        huboFallo = true; // NO se marca como synced → se reintenta
       }
     }
-    if (cambiados.length === 0) return;
+    if (huboFallo) {
+      clearTimeout(liqSyncTimer.current);
+      liqSyncTimer.current = setTimeout(flushLiqPending, 5000);
+    }
+  }, []);
 
+  useEffect(() => {
+    liqParamsRef.current = liqParams;
+    saveLS("liq_params", liqParams);
     clearTimeout(liqSyncTimer.current);
-    liqSyncTimer.current = setTimeout(async () => {
-      for (const [n, datos] of cambiados) {
-        await sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
-      }
-      prevLiqRef.current = JSON.parse(JSON.stringify(liqParams));
-    }, 700);
-
-    return () => clearTimeout(liqSyncTimer.current);
-  },[liqParams]);
+    liqSyncTimer.current = setTimeout(flushLiqPending, 700);
+    // OJO: sin "return () => clearTimeout(...)" a propósito. Ese cleanup
+    // cancelaba el upsert pendiente al hacer logout/refresh dentro de los
+    // 700ms y el cambio nunca llegaba a Supabase.
+  }, [liqParams, flushLiqPending]);
   useEffect(()=>saveLS("sp_days",specialDays),[specialDays]);
   useEffect(()=>saveLS("man_sal",manualSalidas),[manualSalidas]);
   useEffect(()=>saveLS("man_rec",manualRecords),[manualRecords]);
@@ -874,11 +884,26 @@ function AppMain({ session }) {
         }
         setManualSalidas(prev=>({...prev,...salMap,...entMap}));
       }
-      if (liqRows?.length) {
-        const map = {};
-        for (const row of liqRows) map[String(row.emp_no)] = row.datos;
-        setLiqParams(map);
-        prevLiqRef.current = JSON.parse(JSON.stringify(map));
+      {
+        const serverMap = {};
+        for (const row of (liqRows || [])) serverMap[String(row.emp_no)] = row.datos;
+        setLiqParams(local => {
+          // MERGE en vez de reemplazo total. Antes: setLiqParams(map) pisaba
+          // TODO el estado con lo del servidor y borraba cualquier circular
+          // que estuviera solo en localStorage (escrituras que fallaron,
+          // ediciones hechas mientras cargaba, etc.).
+          const merged = { ...serverMap };
+          for (const [key, datos] of Object.entries(local)) {
+            if (JSON.stringify(serverMap[key]) !== JSON.stringify(datos)) {
+              merged[key] = datos; // conservar el cambio local pendiente
+            }
+          }
+          return merged;
+        });
+        // prevLiqRef queda con la foto DEL SERVIDOR (no del merge): así todo
+        // lo local que difiera se detecta como "pendiente" y flushLiqPending
+        // lo re-sube automáticamente en el próximo ciclo.
+        prevLiqRef.current = JSON.parse(JSON.stringify(serverMap));
       }
       if (histRows?.length) setCircHist(histRows);
       setSbLoading(false); setSbStatus("synced"); setSbLastSync(new Date());
