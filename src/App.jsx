@@ -2588,7 +2588,7 @@ function AppMain({ session }) {
               const importeFeriados  =  ovr(p.impFeriadosManual)   ?? valorDia      * feriados;
               const importeVacacion  =  ovr(p.impVacacionesManual) ?? valorDia      * vacaciones;
               const importeFinde     =  ovr(p.impFindeManual)      ?? valorDiaFinde * diasFinde;
-              const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
+              const totalAdicionales = importeExtras + importeFeriados + importeVacacion + importeFinde; // SAC va en su propia columna
 
               const descDemorasCalc = (valorHora / 4) * fraccionesDem;
               const descSalTempCalc = (valorHora / 4) * fraccionesSt;
@@ -2599,7 +2599,7 @@ function AppMain({ session }) {
               const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
               const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
               const totalDesc        = descDemoras + descSalTemp;
-              const subtotal         = sueldoBasico + totalAdicionales - totalDesc - adelanto;
+              const subtotal         = sueldoBasico + totalAdicionales + sac - totalDesc - adelanto;
               const reciboA          = parseFloat(p.reciboA || 0);
               const enMano           = subtotal - reciboA;      
 
