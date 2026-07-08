@@ -1101,6 +1101,8 @@ function AppMain({ session }) {
       "hsExtraRelojManual",                        // corrección de hs del reloj
       "impExtrasManual", "impFindeManual",         // importes manuales de
       "impFeriadosManual", "impVacacionesManual",  // adicionales
+      "reciboA",                                   // forma de pago del mes
+        
       "sac", "vacaciones", "feriados",             // adicionales manuales
       "findeSel",                                  // selección de findes
     ];
@@ -2537,6 +2539,8 @@ function AppMain({ session }) {
               const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
               const totalDesc        = descDemoras + descSalTemp;
               const subtotal         = sueldoBasico + totalAdicionales - totalDesc - adelanto;
+              const reciboA          = parseFloat(p.reciboA || 0);
+              const enMano           = subtotal - reciboA;      
 
               return {
                 emp,
@@ -2549,6 +2553,8 @@ function AppMain({ session }) {
                 totalDesc,
                 adelanto,
                 subtotal,
+                reciboA,
+                enMano,
               };
             })
             .filter(Boolean);
@@ -2559,6 +2565,8 @@ function AppMain({ session }) {
           const totDesc       = filas.reduce((s,f)=>s+f.totalDesc,0);
           const totAdelanto   = filas.reduce((s,f)=>s+f.adelanto,0);
           const totSubtotal   = filas.reduce((s,f)=>s+f.subtotal,0);
+          const totReciboA    = filas.reduce((s,f)=>s+f.reciboA,0);
+          const totEnMano     = filas.reduce((s,f)=>s+f.enMano,0);
 
           const thR = {padding:"9px 14px",color:COL.textFaint,fontSize:11,fontWeight:600,
             textAlign:"right",whiteSpace:"nowrap",letterSpacing:"0.04em",
@@ -2579,6 +2587,7 @@ function AppMain({ session }) {
                       ["empNo","N°"],["nombre","Empleado"],["area","Área"],["ingreso","Ingreso"],
                       ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],["sac","SAC"],
                       ["totalDesc","Desc. hs/días"],["adelanto","Adelantos"],["subtotal","Subtotal"],
+                      ["reciboA","Recibo A"],["enMano","A pagar en mano"],
                     ];
                     const rows = filas.map(f=>({
                       empNo:f.emp.empNo, nombre:f.nombre, area:f.area==="—"?"":f.area,
@@ -2589,10 +2598,13 @@ function AppMain({ session }) {
                       totalDesc:Math.round(f.totalDesc),
                       adelanto:Math.round(f.adelanto),
                       subtotal:Math.round(f.subtotal),
+                      reciboA:Math.round(f.reciboA),
+                      enMano:Math.round(f.enMano),
                     }));
                     rows.push({empNo:"",nombre:`TOTAL (${filas.length})`,area:"",ingreso:"",
                       sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),sac:Math.round(totSac),
-                      totalDesc:Math.round(totDesc),adelanto:Math.round(totAdelanto),subtotal:Math.round(totSubtotal)});
+                      totalDesc:Math.round(totDesc),adelanto:Math.round(totAdelanto),subtotal:Math.round(totSubtotal),
+                      reciboA:Math.round(totReciboA),enMano:Math.round(totEnMano)});
                     const sufijo = resumenMes ? `_${resumenMes}` : "";
                     exportXLSX(rows, headers, "Resumen", `resumen_liquidaciones${sufijo}.xlsx`);
                   }} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
@@ -2649,6 +2661,8 @@ function AppMain({ session }) {
                         <th style={{...thR,color:"#c53030"}}>Desc. hs/días</th>
                         <th style={{...thR,color:"#b45309"}}>Adelantos</th>
                         <th style={{...thR,color:"#276749",fontWeight:700}}>Subtotal</th>
+                        <th style={{...thR,color:"#1d4ed8"}}>Recibo A</th>
+                        <th style={{...thR,color:"#0f766e"}}>A pagar en mano</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2671,6 +2685,8 @@ function AppMain({ session }) {
                           <td style={tdR("#c53030")}>{f.totalDesc>0?fmt$(f.totalDesc):"—"}</td>
                           <td style={tdR("#b45309")}>{f.adelanto>0?fmt$(f.adelanto):"—"}</td>
                           <td style={{...tdR("#276749"),fontWeight:700,fontSize:13}}>{fmt$(f.subtotal)}</td>
+                          <td style={tdR("#1d4ed8")}>{f.reciboA>0?fmt$(f.reciboA):"—"}</td>
+                          <td style={{...tdR(f.enMano<0?"#c53030":"#0f766e"),fontWeight:600}}>{f.reciboA>0||f.enMano!==f.subtotal?fmt$(f.enMano):fmt$(f.enMano)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2685,6 +2701,8 @@ function AppMain({ session }) {
                         <td style={{...tdR("#c53030"),fontWeight:700}}>{totDesc>0?fmt$(totDesc):"—"}</td>
                         <td style={{...tdR("#b45309"),fontWeight:700}}>{totAdelanto>0?fmt$(totAdelanto):"—"}</td>
                         <td style={{...tdR("#276749"),fontWeight:700,fontSize:14}}>{fmt$(totSubtotal)}</td>
+                        <td style={{...tdR("#1d4ed8"),fontWeight:700}}>{totReciboA>0?fmt$(totReciboA):"—"}</td>
+                        <td style={{...tdR("#0f766e"),fontWeight:700,fontSize:14}}>{fmt$(totEnMano)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -3203,6 +3221,36 @@ function AppMain({ session }) {
                             {descSalTempManual!==null&&<button onClick={()=>setP("descSalTempManual","")}
                               style={{fontSize:10,color:COL.textFaint,background:"none",border:"none",cursor:"pointer"}}>↺</button>}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Forma de pago: Recibo A / en mano */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{fontSize:11,color:"#1d4ed8",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
+                          Forma de pago
+                        </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
+                            Recibo A <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>(transferencia)</span>
+                          </label>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                            <input type="number" min="0" step="any"
+                              value={p.reciboA !== undefined ? p.reciboA : ""}
+                              onChange={e=>setP("reciboA", e.target.value)}
+                              placeholder="0"
+                              style={{...S.sInput,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                            />
+                          </div>
+                        </div>
+                        <div style={{fontSize:12,color:COL.textSub,display:"flex",justifyContent:"space-between",maxWidth:364}}>
+                          <span>A pagar en mano (efectivo):</span>
+                          <b style={{fontFamily:MONO,color:(totalACobrar-(parseFloat(p.reciboA)||0))<0?"#c53030":"#0f766e"}}>
+                            ${Math.round(totalACobrar-(parseFloat(p.reciboA)||0)).toLocaleString("es-AR")}
+                          </b>
+                        </div>
+                        <div style={{marginTop:4,fontSize:10,color:COL.textFaint}}>
+                          En mano = Total a cobrar − Recibo A. Ambos se muestran en la pestaña Resumen.
                         </div>
                       </div>
 
