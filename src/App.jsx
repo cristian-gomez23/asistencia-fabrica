@@ -704,6 +704,7 @@ function empToRow(e) {
     activo: e.activo !== false,
     auto_detected: e.autoDetected || false,
     tipo: e.tipo || "operario",
+    sin_reloj: e.sinReloj || false,
   };
 }
 
@@ -714,6 +715,7 @@ function rowToEmp(r) {
     depto: r.depto, entrada: r.entrada_ref, salida: r.salida_ref,
     activo: r.activo, autoDetected: r.auto_detected,
     tipo: r.tipo || "operario",
+    sinReloj: r.sin_reloj || false,
   };
 }
 
@@ -1120,6 +1122,23 @@ function AppMain({ session }) {
       return next;
     });
   }, []);
+
+  // Alta manual de empleado (sin reloj / sueldo fijo)
+  const [showAltaEmp, setShowAltaEmp] = useState(false);
+  const [altaEmp, setAltaEmp] = useState({empNo:"",nombre:"",tipo:"operario",depto:"pyg"});
+  const crearEmpleado = () => {
+    const no = parseInt(altaEmp.empNo, 10);
+    if (isNaN(no) || no <= 0) { alert("Ingresá un N° válido (mayor a 0)."); return; }
+    if (employees[no]) { alert(`El N° ${no} ya pertenece a ${cap(employees[no].nombre)}.`); return; }
+    if (!altaEmp.nombre.trim()) { alert("Ingresá el nombre."); return; }
+    const e = { empNo:no, nombre:altaEmp.nombre.trim(), depto:altaEmp.depto||"pyg",
+      entrada:"06:00", salida:"16:30", activo:true, autoDetected:false,
+      tipo:altaEmp.tipo, sinReloj:true };
+    setEmployees(p=>({...p,[no]:e}));
+    sbUpsertSingle("empleados", empToRow(e), "emp_no");
+    setAltaEmp({empNo:"",nombre:"",tipo:"operario",depto:"pyg"});
+    setShowAltaEmp(false);
+  };
 
   const empList=Object.values(employees).sort((a,b)=>a.empNo-b.empNo);
   const filteredEmps=empList.filter(e=>{
@@ -1533,8 +1552,50 @@ function AppMain({ session }) {
         {/* ── 2 EMPLEADOS ── */}
         {tab===2&&(
           <div>
-            <H2>Empleados — Horarios de referencia</H2>
-            <p style={S.body}>Estos horarios se usan para calcular demoras y salidas tempranas. Editá individualmente o seleccioná varios para asignar un horario en bloque.</p>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <H2>Empleados — Horarios de referencia</H2>
+                <p style={S.body}>Estos horarios se usan para calcular demoras y salidas tempranas. Editá individualmente o seleccioná varios para asignar un horario en bloque.</p>
+              </div>
+              <button onClick={()=>setShowAltaEmp(v=>!v)}
+                style={{...S.btnS,display:"flex",alignItems:"center",gap:6,background:COL.accent}}>
+                <span style={{fontSize:14,lineHeight:1}}>＋</span> Agregar empleado
+              </button>
+            </div>
+
+            {showAltaEmp&&(
+              <div style={{background:COL.surface,border:`1px solid ${COL.border}`,borderRadius:10,padding:"14px 16px",marginBottom:14,display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>N°</div>
+                  <input type="number" min="1" value={altaEmp.empNo}
+                    onChange={e=>setAltaEmp(p=>({...p,empNo:e.target.value}))}
+                    placeholder="ej: 500"
+                    style={{...S.sInput,width:90,padding:"6px 10px",fontFamily:MONO,fontSize:13}}/>
+                </div>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Nombre</div>
+                  <input value={altaEmp.nombre}
+                    onChange={e=>setAltaEmp(p=>({...p,nombre:e.target.value}))}
+                    placeholder="Apellido Nombre"
+                    style={{...S.sInput,width:"100%",padding:"6px 10px",fontSize:13}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Tipo</div>
+                  <select value={altaEmp.tipo} onChange={e=>setAltaEmp(p=>({...p,tipo:e.target.value}))}
+                    style={{...S.sInput,width:150,padding:"6px 8px",fontSize:12}}>
+                    <option value="operario">Operario</option>
+                    <option value="administrativo">Administrativo</option>
+                  </select>
+                </div>
+                <button onClick={crearEmpleado} style={{...S.btnS,background:"#276749",padding:"8px 16px"}}>Crear</button>
+                <button onClick={()=>setShowAltaEmp(false)} style={{...S.cancelBtn}}>Cancelar</button>
+                <div style={{flexBasis:"100%",fontSize:11,color:COL.textFaint,marginTop:2}}>
+                  Se crea como <b>sin reloj</b>: no ficha asistencia, su sueldo básico se
+                  respeta completo y no aparece en Novedades como "Sin marca". Cargale la
+                  circular con su básico y liquidalo normalmente.
+                </div>
+              </div>
+            )}
 
             {/* Tipo filter tabs */}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
@@ -1601,7 +1662,7 @@ function AppMain({ session }) {
                         <td style={{...S.td,fontFamily:MONO,fontSize:12,color:COL.accent}}>{emp.empNo}</td>
                         <td style={{...S.td,textAlign:"left",fontWeight:500,color:COL.text}}>
                           {isEd?<input value={editDraft.nombre} onChange={e=>setEditDraft(p=>({...p,nombre:e.target.value}))} style={S.inlineInput}/>
-                            :<>{cap(emp.nombre)}{emp.autoDetected&&<span className="chip-auto">auto</span>}</>}
+                            :<>{cap(emp.nombre)}{emp.autoDetected&&<span className="chip-auto">auto</span>}{emp.sinReloj&&<span style={{marginLeft:6,fontSize:10,padding:"2px 7px",borderRadius:10,background:"#eef2ff",color:"#4338ca",fontWeight:600}}>sin reloj</span>}</>}
                         </td>
                         <td style={{...S.td,padding:"6px 10px"}}>
                           {isEd
@@ -3415,6 +3476,7 @@ function AppMain({ session }) {
           const sinMarca = [];
 
           for (const emp of activeEmps) {
+            if (emp.sinReloj) continue; // sueldo fijo: no ficha, no es novedad
             const recs = recsDe(emp.empNo);
             const recDelDia = recs.find(r=>r.fecha===ultimoDia && (r.entrada||r.salida));
             if (recDelDia) {
