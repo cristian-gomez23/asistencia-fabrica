@@ -1098,6 +1098,7 @@ function AppMain({ session }) {
     const RESET = [
       "descDemorasManual", "descSalTempManual",   // overrides de descuentos
       "horasExtraManualHs", "horasExtraManualImp", // hs extra fuera del reloj
+      "hsExtraRelojManual",                        // corrección de hs del reloj
       "sac", "vacaciones", "feriados",             // adicionales manuales
       "findeSel",                                  // selección de findes
     ];
@@ -2501,7 +2502,9 @@ function AppMain({ session }) {
                 .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
 
               const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
-              const horasExtra      = totalExtraMin / 60;
+              const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
+                ? parseFloat(p.hsExtraRelojManual) : null;
+              const horasExtra      = (hsRelojOverride !== null ? Math.round(hsRelojOverride*60) : totalExtraMin) / 60;
               const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
               const fraccionesSt    = fraccionesSalTempCalc(empCalcs);
 
@@ -2740,9 +2743,14 @@ function AppMain({ session }) {
           const fraccionesSalTemp = fraccionesSalTempCalc(rangeCalcs);
           // (se mantiene el total en horas solo por compatibilidad de display)
           const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
-          // Horas extra — decimal para cálculos, HH:MM para mostrar
-          const horasExtra        = parseFloat((totalExtraMin / 60).toFixed(10)); // full precision for math
-          const horasExtraDisplay = minsToDisplay(totalExtraMin); // ej: 38h26
+          // Horas extra — decimal para cálculos, HH:MM para mostrar.
+          // Si RRHH cargó una corrección manual (hsExtraRelojManual), ESA manda.
+          const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
+            ? parseFloat(p.hsExtraRelojManual) : null;
+          const extraMinFinal   = hsRelojOverride !== null ? Math.round(hsRelojOverride * 60) : totalExtraMin;
+          const horasExtraRelojDisplay = minsToDisplay(totalExtraMin); // lo que marcó el reloj
+          const horasExtra        = parseFloat((extraMinFinal / 60).toFixed(10)); // full precision for math
+          const horasExtraDisplay = minsToDisplay(extraMinFinal); // ej: 38h26
 
           // Manual inputs (stored per employee)
           const sueldoBasico  = parseFloat(p.sueldoBasico  || 0);
@@ -2969,6 +2977,61 @@ function AppMain({ session }) {
                             Total adelantos: ${Math.round(adelanto).toLocaleString("es-AR")}
                           </div>
                         )}
+                      </div>
+
+                      {/* Corrección manual de las hs. extra del reloj */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{fontSize:11,color:"#9c4221",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
+                          Hs. extra del reloj — corrección manual
+                        </div>
+                        {(()=>{
+                          const { h: curH, m: curM } = decimalToHM(p.hsExtraRelojManual);
+                          const setHM = (h, m) => setP("hsExtraRelojManual", hmToDecimal(h, m));
+                          return (
+                            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                              <div style={{minWidth:80}}>
+                                <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Horas</div>
+                                <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                  <input type="number" min="0" step="1" inputMode="numeric"
+                                    value={curH}
+                                    onChange={e=>setHM(e.target.value, curM)}
+                                    placeholder="—"
+                                    style={{...S.sInput,width:64,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                                  />
+                                  <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>h</span>
+                                </div>
+                              </div>
+                              <div style={{minWidth:80}}>
+                                <div style={{fontSize:11,color:COL.textFaint,marginBottom:4}}>Minutos</div>
+                                <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                  <input type="number" min="0" max="59" step="1" inputMode="numeric"
+                                    value={curM}
+                                    onChange={e=>{
+                                      let m = e.target.value;
+                                      if(m !== "" && parseInt(m,10) > 59) m = "59";
+                                      setHM(curH, m);
+                                    }}
+                                    placeholder="—"
+                                    style={{...S.sInput,width:64,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                                  />
+                                  <span style={{fontSize:12,color:COL.textFaint,whiteSpace:"nowrap"}}>min</span>
+                                </div>
+                              </div>
+                              <button onClick={()=>setP("hsExtraRelojManual","0")}
+                                title="Liquidar 0 horas extra aunque el reloj haya marcado"
+                                style={{...S.btnS,background:"#9c4221",padding:"6px 11px"}}>Anular (0h)</button>
+                              {hsRelojOverride !== null && (
+                                <button onClick={()=>setP("hsExtraRelojManual","")}
+                                  style={{...S.btnS,background:"#64748b",padding:"6px 11px"}}>Usar reloj</button>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        <div style={{marginTop:8,fontSize:12,color: hsRelojOverride !== null ? "#9c4221" : COL.textFaint}}>
+                          {hsRelojOverride !== null
+                            ? <>Usando corrección manual: <b style={{fontFamily:MONO}}>{horasExtraDisplay}</b> · el reloj marcó <b style={{fontFamily:MONO}}>{horasExtraRelojDisplay}</b></>
+                            : <>Vacío = se usa el total del reloj (<b style={{fontFamily:MONO}}>{horasExtraRelojDisplay}</b>)</>}
+                        </div>
                       </div>
 
                       {/* Horas extra manuales — fuera del reloj */}
