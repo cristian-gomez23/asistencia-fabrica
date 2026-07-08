@@ -1193,7 +1193,7 @@ function AppMain({ session }) {
     thr:{},
     th:{padding:"10px 14px",color:COL.textFaint,fontSize:11,fontWeight:600,textAlign:"center",whiteSpace:"nowrap",letterSpacing:"0.04em",background:"#f7f8fa",borderBottom:`1px solid ${COL.border}`},
     td:{padding:"9px 14px",color:COL.textSub,textAlign:"center",borderBottom:`1px solid ${COL.border}`,whiteSpace:"nowrap"},
-    tblWrap:{borderRadius:10,border:`1px solid ${COL.border}`,overflow:"hidden"},
+    tblWrap:{borderRadius:10,border:`1px solid ${COL.border}`,overflowX:"auto",overflowY:"hidden"},
     bulkBar:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14,background:COL.surface,padding:"12px 16px",borderRadius:10,border:`1px solid ${COL.border}`,flexWrap:"wrap"},
     tInp:{background:COL.accentBg,border:`1px solid ${COL.accentSoft}`,borderRadius:6,color:COL.accent,padding:"5px 8px",fontFamily:MONO,fontSize:13,outline:"none",width:96},
     inlineInput:{background:COL.accentBg,border:`1px solid ${COL.accentSoft}`,borderRadius:6,color:COL.text,padding:"4px 8px",fontFamily:SANS,fontSize:13,outline:"none",width:"100%"},
@@ -1781,7 +1781,7 @@ function AppMain({ session }) {
 
         {/* ── 4 POR EMPLEADO ── */}
         {tab===3&&(()=>{
-          const empOptions = empList.filter(e=>e.activo!==false&&records.some(r=>r.empNo===e.empNo));
+          const empOptions = empList.filter(e=>e.activo!==false&&(e.sinReloj||records.some(r=>r.empNo===e.empNo)));
           const selEmp     = detalleEmp ? employees[detalleEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
           const selCalcs   = selSummary ? [...selSummary.calcs].sort((a,b)=>a.fecha.localeCompare(b.fecha)) : [];
@@ -2636,7 +2636,7 @@ function AppMain({ session }) {
             borderBottom:`1px solid ${COL.border}`,whiteSpace:"nowrap",fontFamily:MONO,fontSize:12});
 
           return (
-            <div style={{maxWidth:1200}}>
+            <div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
                 <div>
                   <H2>Resumen de liquidaciones</H2>
@@ -2774,7 +2774,7 @@ function AppMain({ session }) {
         })()}
 
 {tab===7&&(()=>{
-          const empOptions = empList.filter(e=>e.activo!==false&&records.some(r=>r.empNo===e.empNo));
+          const empOptions = empList.filter(e=>e.activo!==false&&(e.sinReloj||records.some(r=>r.empNo===e.empNo)));
           const selEmp     = liqEmp ? employees[liqEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
           const selCalcs   = selSummary ? selSummary.calcs : [];
