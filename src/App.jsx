@@ -747,6 +747,9 @@ function AppMain({ session }) {
   const [tab, setTab]             = useState(0);
   const [records, setRecords]     = useState([]);
   const [employees, setEmployees] = useState(()=>makeDefaultEmployees());
+  // Ref para leer el estado actual de empleados desde callbacks estables
+  const employeesRef = useRef(employees);
+  useEffect(()=>{ employeesRef.current = employees; },[employees]);
   const [empTipoF, setEmpTipoF] = useState("todos");
   const [empActivoF, setEmpActivoF] = useState("todos"); // "todos" | "activo" | "inactivo"
   const [sbLoading, setSbLoading] = useState(false);
@@ -948,6 +951,18 @@ function AppMain({ session }) {
     return ()=>{ unsubRegs(); unsubEmps(); unsubDias(); };
   },[]);
 
+  // Archiva la versión actual de la circular de un empleado como copia histórica
+  const archivarCircular = useCallback((empNo, motivo="manual") => {
+    const datos = liqParams[String(empNo)];
+    if (!datos || !datos.sueldoBasico) return false; // nada que archivar
+    const emp = employees[empNo];
+    const archivedAt = new Date().toISOString();
+    const row = circHistToRow(empNo, emp?.nombre, datos, motivo, archivedAt);
+    setCircHist(prev => [row, ...prev]);   // optimista
+    sbInsertCircHist(row);
+    return true;
+  }, [liqParams, employees]);
+
   const handleFile = useCallback(async(e)=>{
     const file=e.target.files[0]; if(!file) return;
     setImporting(true); setImportMsg({text:"Procesando...",ok:true});
@@ -956,32 +971,94 @@ function AppMain({ session }) {
       const wsName=wb.SheetNames.find(n=>n==="Anormal")||wb.SheetNames[0];
       const parsed=parseAnormalSheet(wb.Sheets[wsName]);
       setRecords(prev=>{const m={};for(const r of prev)m[r.id]=r;for(const r of parsed)m[r.id]=r;return Object.values(m);});
-      const nuevosEmps = {};
-      setEmployees(prev=>{
-        const u={...prev},byEmp={};
-        for(const r of parsed){if(!byEmp[r.empNo])byEmp[r.empNo]=[];byEmp[r.empNo].push(r);}
-        for(const[noStr,recs]of Object.entries(byEmp)){
-          const no=Number(noStr);
-          if(!u[no]){const d=detectSchedule(recs);u[no]={empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",activo:true,autoDetected:true,tipo:"operario"};nuevosEmps[no]=u[no];}
+      // ── Detección de empleados nuevos y de números de reloj REASIGNADOS ──
+      // Si un N° ya existe pero la planilla trae OTRO nombre, el reloj
+      // recicló el número: se pisa la ficha con el empleado nuevo y se
+      // limpia su circular (archivándola antes, si tenía datos).
+      const norm = s => (s||"").toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+      const byEmp = {};
+      for (const r of parsed){ if(!byEmp[r.empNo]) byEmp[r.empNo]=[]; byEmp[r.empNo].push(r); }
+
+      const nuevos = [], reasignados = [];
+      const empsAct = employeesRef.current;
+      for (const [noStr, recs] of Object.entries(byEmp)) {
+        const no = Number(noStr), exist = empsAct[no];
+        const d = detectSchedule(recs);
+        const ficha = {empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,
+          entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",
+          activo:true,autoDetected:true,tipo:"operario"};
+        if (!exist) nuevos.push(ficha);
+        else if (norm(exist.nombre) !== norm(recs[0].nombre)) {
+          reasignados.push({ viejo: exist.nombre, ficha });
         }
-        return u;
-      });
-      setImportMsg({text:`${parsed.length} registros importados desde "${wsName}"`,ok:true});
-      // Sync a Supabase SOLO los empleados NUEVOS, de a uno.
-      // Antes se subían los 199 en un lote todo-o-nada: si fallaba,
-      // el empleado nuevo nunca llegaba al servidor.
-      for (const e of Object.values(nuevosEmps)) {
-        sbUpsertSingle("empleados", empToRow(e), "emp_no");
       }
+
+      // Reasignados: archivar la circular vieja (si había) y borrarla
+      for (const { ficha } of reasignados) {
+        archivarCircular(ficha.empNo, "reasignacion");
+        sbDelete("liq_params", ficha.empNo, "emp_no");
+        setLiqParams(p=>{const u={...p}; delete u[String(ficha.empNo)]; return u;});
+        delete prevLiqRef.current[String(ficha.empNo)];
+      }
+
+      // Altas y pisadas: al estado y a Supabase de a una
+      const altas = [...nuevos, ...reasignados.map(r=>r.ficha)];
+      if (altas.length) {
+        setEmployees(prev=>{const u={...prev}; for(const e of altas) u[e.empNo]=e; return u;});
+        for (const e of altas) sbUpsertSingle("empleados", empToRow(e), "emp_no");
+      }
+
+      const notas = reasignados.map(r=>`N° ${r.ficha.empNo}: ${cap(r.viejo)} → ${cap(r.ficha.nombre)}`);
+      setImportMsg({
+        text:`${parsed.length} registros importados desde "${wsName}"` +
+          (notas.length ? ` — ⚠ Números reasignados (ficha y circular reiniciadas): ${notas.join("; ")}` : ""),
+        ok:true
+      });
       // Sync to Supabase silently
       const periodo = parsed[0]?.fecha?.slice(0,7);
       sbUpsert("registros", parsed.map(r=>recToRow(r,periodo)));
     } catch(err){setImportMsg({text:`Error: ${err.message}`,ok:false});}
     setImporting(false);
     if(fileRef.current)fileRef.current.value="";
-  },[]);
+  },[archivarCircular]);
 
   const startEdit=emp=>{setEditingEmp(emp.empNo);setEditDraft({nombre:emp.nombre,depto:emp.depto,entrada:emp.entrada,salida:emp.salida,tipo:emp.tipo||"operario"});};
+  // Elimina definitivamente un empleado inactivo y todo su rastro,
+  // liberando el número de reloj para un futuro empleado.
+  const eliminarEmpleado = useCallback((emp) => {
+    const nRecs = [...records, ...manualRecords].filter(r=>r.empNo===emp.empNo).length;
+    const ok = window.confirm(
+      `¿Eliminar definitivamente a ${cap(emp.nombre)} (N° ${emp.empNo})?\n\n` +
+      `Se borrarán: su ficha, ${nRecs} registros de asistencia, sus correcciones ` +
+      `de horario, su circular y el histórico de circulares.\n\n` +
+      `Esta acción NO se puede deshacer.`
+    );
+    if (!ok) return;
+
+    // 1) Registros de asistencia (todos, incluidos manuales)
+    sbDelete("registros", emp.empNo, "emp_no");
+    setRecords(p=>p.filter(r=>r.empNo!==emp.empNo));
+    setManualRecords(p=>p.filter(r=>r.empNo!==emp.empNo));
+
+    // 2) Correcciones de hora (sus claves empiezan con "empNo_")
+    const pref = `${emp.empNo}_`;
+    const keys = Object.keys(manualSalidas).filter(k=>k.startsWith(pref));
+    const idsCorr = [...new Set(keys.map(k=>k.endsWith("_ent") ? k.slice(0,-4) : k))];
+    for (const id of idsCorr) sbDelete("correcciones", id);
+    if (keys.length) setManualSalidas(p=>{const u={...p}; for(const k of keys) delete u[k]; return u;});
+
+    // 3) Circular + histórico de circulares
+    sbDelete("liq_params", emp.empNo, "emp_no");
+    setLiqParams(p=>{const u={...p}; delete u[String(emp.empNo)]; return u;});
+    delete prevLiqRef.current[String(emp.empNo)];
+    sbDelete("circular_historico", emp.empNo, "emp_no");
+    setCircHist(p=>p.filter(h=>h.emp_no!==emp.empNo));
+
+    // 4) La ficha
+    sbDelete("empleados", emp.empNo, "emp_no");
+    setEmployees(p=>{const u={...p}; delete u[emp.empNo]; return u;});
+  }, [records, manualRecords, manualSalidas]);
   const saveEdit=no=>{
     const updated = {...employees[no],...editDraft,autoDetected:false};
     setEmployees(p=>({...p,[no]:updated}));
@@ -1010,17 +1087,6 @@ function AppMain({ session }) {
     });
   };
 
-   // Archiva la versión actual de la circular de un empleado como copia histórica
-  const archivarCircular = useCallback((empNo, motivo="manual") => {
-    const datos = liqParams[String(empNo)];
-    if (!datos || !datos.sueldoBasico) return false; // nada que archivar
-    const emp = employees[empNo];
-    const archivedAt = new Date().toISOString();
-    const row = circHistToRow(empNo, emp?.nombre, datos, motivo, archivedAt);
-    setCircHist(prev => [row, ...prev]);   // optimista
-    sbInsertCircHist(row);
-    return true;
-  }, [liqParams, employees]);
 
   // Inicia un nuevo período de liquidación para TODOS los empleados:
   // - setea periodo (ej "JUNIO 2026") y desde/hasta
@@ -1574,7 +1640,16 @@ function AppMain({ session }) {
                                 <button onClick={()=>saveEdit(emp.empNo)} style={S.saveBtn}>Guardar</button>
                                 <button onClick={cancelEdit} style={S.cancelBtn}>Cancelar</button>
                               </span>
-                            :<button onClick={()=>startEdit(emp)} className="hov-edit" style={S.editBtn}>Editar</button>}
+                            :<span style={{display:"flex",gap:6,justifyContent:"center"}}>
+                                <button onClick={()=>startEdit(emp)} className="hov-edit" style={S.editBtn}>Editar</button>
+                                {!emp.activo && (
+                                  <button onClick={()=>eliminarEmpleado(emp)}
+                                    title="Eliminar definitivamente (libera el N° de reloj)"
+                                    style={{...S.cancelBtn,color:"#c53030",borderColor:"#f5c6c6",background:"#fff5f5"}}>
+                                    Eliminar
+                                  </button>
+                                )}
+                              </span>}
                         </td>
                       </tr>
                     );
