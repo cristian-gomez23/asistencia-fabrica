@@ -956,22 +956,23 @@ function AppMain({ session }) {
       const wsName=wb.SheetNames.find(n=>n==="Anormal")||wb.SheetNames[0];
       const parsed=parseAnormalSheet(wb.Sheets[wsName]);
       setRecords(prev=>{const m={};for(const r of prev)m[r.id]=r;for(const r of parsed)m[r.id]=r;return Object.values(m);});
+      const nuevosEmps = {};
       setEmployees(prev=>{
         const u={...prev},byEmp={};
         for(const r of parsed){if(!byEmp[r.empNo])byEmp[r.empNo]=[];byEmp[r.empNo].push(r);}
         for(const[noStr,recs]of Object.entries(byEmp)){
           const no=Number(noStr);
-          if(!u[no]){const d=detectSchedule(recs);u[no]={empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",activo:true,autoDetected:true,tipo:"operario"};}
+          if(!u[no]){const d=detectSchedule(recs);u[no]={empNo:no,nombre:recs[0].nombre,depto:recs[0].depto,entrada:d?.entrada||"06:00",salida:d?.salida||"16:30",activo:true,autoDetected:true,tipo:"operario"};nuevosEmps[no]=u[no];}
         }
         return u;
       });
       setImportMsg({text:`${parsed.length} registros importados desde "${wsName}"`,ok:true});
-      // Sync employees to Supabase silently
-      setEmployees(prev => {
-        const snap = Object.values(prev);
-        sbUpsert("empleados", snap.map(empToRow), "emp_no");
-        return prev;
-      });
+      // Sync a Supabase SOLO los empleados NUEVOS, de a uno.
+      // Antes se subían los 199 en un lote todo-o-nada: si fallaba,
+      // el empleado nuevo nunca llegaba al servidor.
+      for (const e of Object.values(nuevosEmps)) {
+        sbUpsertSingle("empleados", empToRow(e), "emp_no");
+      }
       // Sync to Supabase silently
       const periodo = parsed[0]?.fecha?.slice(0,7);
       sbUpsert("registros", parsed.map(r=>recToRow(r,periodo)));
