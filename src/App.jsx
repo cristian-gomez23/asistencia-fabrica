@@ -305,7 +305,7 @@ function hmToDecimal(h, m) {
 
 /* ─── PDF export ─────────────────────────────────────────────────────────── */
 function exportLiqPDF(d) {
-  const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt,
+  const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt, impExtrasReloj,
     importeExtras, importeExtraManual, horasExtraManualDisplay, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
     descDemoras, fraccionesSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
@@ -389,12 +389,12 @@ function exportLiqPDF(d) {
         <tbody>
           ${row("SUELDO BÁSICO","—","—",fmt(importeSueldo),"sub")}
           ${row("ADICIONALES","","","","section")}
-          ${horasExtra>0  ?row("Horas extra (reloj)",horasExtraDisplay,fmt(valorHoraExt),fmt(valorHoraExt*horasExtra),"detail","",true):""}
+          ${(impExtrasReloj??valorHoraExt*horasExtra)>0 ?row("Horas extra (reloj)",horasExtraDisplay,fmt(valorHoraExt),fmt(impExtrasReloj??valorHoraExt*horasExtra),"detail","",true):""}
           ${importeExtraManual>0?row("Horas extra (manual)",horasExtraManualDisplay,fmt(valorHoraExt),fmt(importeExtraManual),"detail","",true):""}
-          ${diasFinde>0   ?row("Días finde/especiales",diasFinde,fmt(valorDiaFinde),fmt(importeFinde),"detail","",true):""}
-          ${feriados>0    ?row("Feriados",feriados,fmt(valorDia),fmt(importeFeriados),"detail","",true):row("Feriados","—",fmt(valorDia),"—","muted","",true)}
+          ${importeFinde>0 ?row("Días finde/especiales",diasFinde||"—",fmt(valorDiaFinde),fmt(importeFinde),"detail","",true):""}
+          ${importeFeriados>0 ?row("Feriados",feriados||"—",fmt(valorDia),fmt(importeFeriados),"detail","",true):row("Feriados","—",fmt(valorDia),"—","muted","",true)}
           ${row("SAC","—","—",sac>0?fmt(sac):"—",sac>0?"detail":"muted","",true)}
-          ${vacaciones>0  ?row("Vacaciones",vacaciones,fmt(valorDia),fmt(importeVacaciones),"detail","",true):row("Vacaciones","—",fmt(valorDia),"—","muted","",true)}
+          ${importeVacaciones>0 ?row("Vacaciones",vacaciones||"—",fmt(valorDia),fmt(importeVacaciones),"detail","",true):row("Vacaciones","—",fmt(valorDia),"—","muted","",true)}
           ${row("Subtotal adicionales","","",fmt(totalAdicionales),"sub")}
           ${row("SUELDO + ADICIONALES","","",fmt(subtotal),"total-line","#1a3a6b")}
           ${row("DESCUENTOS","","","","section")}
@@ -1099,6 +1099,8 @@ function AppMain({ session }) {
       "descDemorasManual", "descSalTempManual",   // overrides de descuentos
       "horasExtraManualHs", "horasExtraManualImp", // hs extra fuera del reloj
       "hsExtraRelojManual",                        // corrección de hs del reloj
+      "impExtrasManual", "impFindeManual",         // importes manuales de
+      "impFeriadosManual", "impVacacionesManual",  // adicionales
       "sac", "vacaciones", "feriados",             // adicionales manuales
       "findeSel",                                  // selección de findes
     ];
@@ -2518,10 +2520,11 @@ function AppMain({ session }) {
                 ? horasExtraManualImp
                 : horasExtraManualHs * valorHoraExt;
 
-              const importeExtras    = valorHoraExt * horasExtra + importeExtraManual;
-              const importeFeriados  = valorDia      * feriados;
-              const importeVacacion  = valorDia      * vacaciones;
-              const importeFinde     = valorDiaFinde * diasFinde;
+              const ovr = (v) => v !== undefined && v !== "" ? parseFloat(v) : null;
+              const importeExtras    = (ovr(p.impExtrasManual)     ?? valorHoraExt * horasExtra) + importeExtraManual;
+              const importeFeriados  =  ovr(p.impFeriadosManual)   ?? valorDia      * feriados;
+              const importeVacacion  =  ovr(p.impVacacionesManual) ?? valorDia      * vacaciones;
+              const importeFinde     =  ovr(p.impFindeManual)      ?? valorDiaFinde * diasFinde;
               const totalAdicionales = importeExtras + importeFeriados + sac + importeVacacion + importeFinde;
 
               const descDemorasCalc = (valorHora / 4) * fraccionesDem;
@@ -2800,10 +2803,22 @@ function AppMain({ session }) {
 
           // Calculations — básico manda, adicionales son extras sobre él
           const importeSueldo    = sueldoBasico;
-          const importeExtras    = valorHoraExt * horasExtra + importeExtraManual;
-          const importeFeriados  = valorDia     * feriados;
-          const importeVacaciones= valorDia     * vacaciones;
-          const importeFinde     = valorDiaFinde * diasFinde;
+          // Importes calculados de cada adicional + override manual por importe.
+          // Vacío = usa el calculado; con valor cargado, ese importe manda.
+          const ovr = (v) => v !== undefined && v !== "" ? parseFloat(v) : null;
+          const impExtrasCalc     = valorHoraExt * horasExtra;
+          const impFeriadosCalc   = valorDia     * feriados;
+          const impVacacionesCalc = valorDia     * vacaciones;
+          const impFindeCalc      = valorDiaFinde * diasFinde;
+          const impExtrasManual     = ovr(p.impExtrasManual);
+          const impFeriadosManual   = ovr(p.impFeriadosManual);
+          const impVacacionesManual = ovr(p.impVacacionesManual);
+          const impFindeManual      = ovr(p.impFindeManual);
+          const impExtrasReloj   = impExtrasManual     !== null ? impExtrasManual     : impExtrasCalc;
+          const importeFeriados  = impFeriadosManual   !== null ? impFeriadosManual   : impFeriadosCalc;
+          const importeVacaciones= impVacacionesManual !== null ? impVacacionesManual : impVacacionesCalc;
+          const importeFinde     = impFindeManual      !== null ? impFindeManual      : impFindeCalc;
+          const importeExtras    = impExtrasReloj + importeExtraManual;
           const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde;
           const totalDescuentos  = descDemoras + descSalTemp;
           const subtotal         = importeSueldo + totalAdicionales;
@@ -2868,7 +2883,7 @@ function AppMain({ session }) {
                   Nuevo período
                 </button>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -3104,6 +3119,46 @@ function AppMain({ session }) {
                         )}
                       </div>
 
+                      {/* Adicionales con importe manual */}
+                      <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
+                        <div style={{fontSize:11,color:"#276749",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
+                          Adicionales — importe manual
+                        </div>
+                        <div style={{fontSize:11,color:COL.textFaint,marginBottom:10}}>
+                          Vacío = usa el importe calculado. Con valor, ese importe manda en la planilla.
+                        </div>
+                        {[
+                          {label:"Horas extra (reloj)",   field:"impExtrasManual",     calc:impExtrasCalc},
+                          {label:"Días finde/especiales", field:"impFindeManual",      calc:impFindeCalc},
+                          {label:"Feriados",              field:"impFeriadosManual",   calc:impFeriadosCalc},
+                          {label:"Vacaciones",            field:"impVacacionesManual", calc:impVacacionesCalc},
+                        ].map(({label,field,calc})=>{
+                          const activo = p[field] !== undefined && p[field] !== "";
+                          return (
+                            <div key={field} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                              <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
+                                {label}
+                                <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>
+                                  (calc: ${Math.round(calc||0).toLocaleString("es-AR")})
+                                </span>
+                              </label>
+                              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                <span style={{fontSize:12,color:COL.textFaint}}>$</span>
+                                <input type="number" min="0" step="any"
+                                  value={p[field] !== undefined ? p[field] : ""}
+                                  onChange={e=>setP(field, e.target.value)}
+                                  placeholder={Math.round(calc||0)||"0"}
+                                  style={{...S.sInput,width:140,padding:"6px 10px",fontFamily:MONO,fontSize:13,
+                                    borderColor: activo?"#f59e0b":undefined}}
+                                />
+                                {activo&&<button onClick={()=>setP(field,"")}
+                                  style={{fontSize:10,color:COL.textFaint,background:"none",border:"none",cursor:"pointer"}}>↺</button>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
                       {/* Descuentos editables */}
                       <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${COL.border}`}}>
                         <div style={{fontSize:11,color:"#c53030",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>
@@ -3250,12 +3305,12 @@ function AppMain({ session }) {
                           <LiqRow label="SUELDO BÁSICO" cantidad="" valor="" importe={fmt(importeSueldo)} bold />
 
                           <LiqRow label="ADICIONALES" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label="Horas extra (reloj)" indent cantidad={horasExtraDisplay} valor={fmt(valorHoraExt)} importe={fmt(valorHoraExt*horasExtra)} />
+                          <LiqRow label={`Horas extra (reloj)${impExtrasManual!==null?" ✎":""}`} indent cantidad={horasExtraDisplay} valor={impExtrasManual!==null?"—":fmt(valorHoraExt)} importe={impExtrasReloj?fmt(impExtrasReloj):"—"} />
                           {importeExtraManual>0&&<LiqRow label="Horas extra (manual)" indent cantidad={horasExtraManualDisplay} valor={fmt(valorHoraExt)} importe={fmt(importeExtraManual)} />}
-                          <LiqRow label="Días finde/especiales" indent cantidad={diasFinde||"—"} valor={diasFinde?fmt(valorDiaFinde):"—"} importe={diasFinde&&valorDiaFinde?fmt(importeFinde):"—"} />
-                          <LiqRow label="Feriados"          indent cantidad={feriados||"—"}  valor={fmt(valorDia)}     importe={feriados?fmt(importeFeriados):"—"} />
+                          <LiqRow label={`Días finde/especiales${impFindeManual!==null?" ✎":""}`} indent cantidad={diasFinde||"—"} valor={impFindeManual!==null?"—":(diasFinde?fmt(valorDiaFinde):"—")} importe={importeFinde?fmt(importeFinde):"—"} />
+                          <LiqRow label={`Feriados${impFeriadosManual!==null?" ✎":""}`}          indent cantidad={feriados||"—"}  valor={impFeriadosManual!==null?"—":fmt(valorDia)}     importe={importeFeriados?fmt(importeFeriados):"—"} />
                           <LiqRow label="SAC"               indent cantidad=""              valor=""                  importe={sac?fmt(sac):"—"} />
-                          <LiqRow label="Vacaciones"        indent cantidad={vacaciones||"—"} valor={fmt(valorDia)}   importe={vacaciones?fmt(importeVacaciones):"—"} />
+                          <LiqRow label={`Vacaciones${impVacacionesManual!==null?" ✎":""}`}        indent cantidad={vacaciones||"—"} valor={impVacacionesManual!==null?"—":fmt(valorDia)}   importe={importeVacaciones?fmt(importeVacaciones):"—"} />
                           <LiqRow label="Subtotal adicionales" cantidad="" valor="" importe={fmt(totalAdicionales)} bold separator />
 
                           <LiqRow label="Sueldo + adicionales" cantidad="" valor="" importe={fmt(subtotal)} bold color={COL.accent} separator />
