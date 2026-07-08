@@ -2026,7 +2026,7 @@ function AppMain({ session }) {
             const b = parseFloat(basico) || 0;
             if (!b) return { valorDia:"", valorHora:"", valorDiaFinde:"", valorHoraExt:"" };
             const valorDia  = b / 22;
-            const valorHora = valorDia / 8;
+            const valorHora = valorDia / 7;
             return {
               valorDia:      valorDia.toFixed(2),
               valorHora:     valorHora.toFixed(2),
@@ -2348,7 +2348,7 @@ function AppMain({ session }) {
                             <tbody>
                               {[
                                 {label:"Valor a descontar por día de falta", field:"valorDia",      note:"sueldo / 22"},
-                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 8 · por hora"},
+                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 7 · por hora"},
                                 {label:"Feriados trabajados",                 field:"valorDia",      note:`sueldo / 22 · hasta las ${emp.salida||"16:30"} hs`},
                                 {label:"Sábados",                             field:"valorDiaFinde", note:"sueldo / 22 · 08 a 14 hs"},
                                 {label:"Horas extras",                        field:"valorHoraExt",  note:`hora × 1.5 · a partir de las ${emp.salida||"16:30"} hs`},
