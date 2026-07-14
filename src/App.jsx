@@ -878,9 +878,18 @@ function AppMain({ session }) {
         setManualRecords(todos.filter(r=>r.manual));
       }
       if (emps?.length) {
-        const map={...makeDefaultEmployees()};
-        for(const e of emps) map[e.emp_no]={...map[e.emp_no],...rowToEmp(e)};
+        // SERVIDOR GANA: si Supabase ya tiene empleados, NO se mezclan las
+        // semillas del código. Antes se hacía {...makeDefaultEmployees()} y
+        // eso resucitaba a los empleados eliminados en cada refresh.
+        const map={};
+        for(const e of emps) map[e.emp_no]=rowToEmp(e);
         setEmployees(map);
+      } else {
+        // Base vacía (primera vez): subir las semillas al servidor una sola
+        // vez para que a partir de ahí Supabase sea la fuente de verdad.
+        const seed = makeDefaultEmployees();
+        setEmployees(seed);
+        sbUpsert("empleados", Object.values(seed).map(empToRow), "emp_no");
       }
       if (dias?.length) {
         const map={};
@@ -941,7 +950,7 @@ function AppMain({ session }) {
     const unsubEmps = sbSubscribe("empleados",
       (r)=>setEmployees(p=>({...p,[r.emp_no]:{...(p[r.emp_no]||{}),...rowToEmp(r)}})),
       (r)=>setEmployees(p=>({...p,[r.emp_no]:{...(p[r.emp_no]||{}),...rowToEmp(r)}})),
-      null
+      (r)=>setEmployees(p=>{const u={...p}; delete u[r.emp_no]; return u;})
     );
 
     const unsubDias = sbSubscribe("dias_especiales",
