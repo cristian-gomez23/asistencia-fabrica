@@ -1960,8 +1960,8 @@ function AppMain({ session }) {
                 <div style={S.tblWrap}>
                   <table style={S.table}>
                     <thead><tr>
-                      {["Fecha","Día","Entrada","Salida","En jornada","Real total","Hs. extra","Demora","Sal. temprana"].map((h,i)=>(
-                        <th key={h} style={{...S.th,textAlign:i<=1?"left":undefined}}>{h}</th>
+                      {["Fecha","Día","Entrada","Salida","En jornada","Real total","Hs. extra","Demora","Sal. temprana","Obs."].map((h,i)=>(
+                        <th key={h} style={{...S.th,textAlign:i<=1||h==="Obs."?"left":undefined}}>{h}</th>
                       ))}
                     </tr></thead>
                     <tbody>
@@ -1970,7 +1970,7 @@ function AppMain({ session }) {
                         const dia   = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][fecha.getDay()];
                         const esFinde = fecha.getDay()===0||fecha.getDay()===6;
                         return(
-                          <tr key={r.id} style={{background:esFinde?"#fdf9f3":i%2===0?"#fff":"#fafbfc"}}>
+                          <tr key={r.id} style={{background:r.recuperar?"#fef6f6":esFinde?"#fdf9f3":i%2===0?"#fff":"#fafbfc"}}>
                             <td style={{...S.td,textAlign:"left",fontFamily:MONO,fontSize:12,color:esFinde?"#b45309":COL.textFaint}}>{r.fecha}</td>
                             <td style={{...S.td,textAlign:"left",fontSize:12,fontWeight:500,color:esFinde?"#b45309":COL.textSub,width:40}}>{dia}</td>
                             <td style={{...S.td,fontFamily:MONO,color:r.entrada?"#276749":"#c0c8d2"}}>{r.entrada||"—"}</td>
@@ -1991,7 +1991,19 @@ function AppMain({ session }) {
                               {r.demora>0?minsToDisplay(r.demora):"—"}
                             </td>
                             <td style={{...S.td,fontFamily:MONO,color:r.salTemprana>0?"#b45309":"#c0c8d2"}}>
-                              {r.salTemprana>0?minsToDisplay(r.salTemprana):"—"}
+                              <span style={{display:"inline-flex",gap:6,alignItems:"center"}}>
+                                {r.salTemprana>0?minsToDisplay(r.salTemprana):"—"}
+                                {r.recuperar&&r.recuperarMin>0&&<span style={{fontSize:10,fontFamily:SANS,background:"#e0f2fe",color:"#0369a1",borderRadius:4,padding:"1px 5px",fontWeight:600,whiteSpace:"nowrap"}}>rec. {minsToDisplay(r.recuperarMin)}</span>}
+                              </span>
+                            </td>
+                            <td style={{...S.td,textAlign:"left",fontSize:11,color:COL.textSub,maxWidth:150}}>
+                              <span style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+                                {r.ausencia==="aus_just"&&<span style={{fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 5px",fontWeight:600}}>AUS. JUST.</span>}
+                                {r.ausencia==="aus_injust"&&<span style={{fontSize:10,background:"#ffedd5",color:"#dc6b19",borderRadius:4,padding:"1px 5px",fontWeight:600}}>AUS. INJUST.</span>}
+                                {r.ausencia==="deuda_hs"&&<span style={{fontSize:10,background:"#fee2e2",color:"#b91c1c",borderRadius:4,padding:"1px 5px",fontWeight:600}}>SAL. ANTICIPADA</span>}
+                                {r.observacion&&<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:140,display:"inline-block"}} title={r.observacion}>{r.observacion}</span>}
+                                {!r.ausencia&&!r.observacion&&<span style={{color:"#d1d5db"}}>—</span>}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -2004,6 +2016,7 @@ function AppMain({ session }) {
                         <td style={{...S.td,fontFamily:MONO,fontWeight:700,color:"#276749"}}>{totExtra>0?`+${minsToDisplay(totExtra)}`:"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,fontWeight:700,color:"#c53030"}}>{totDemora>0?minsToDisplay(totDemora):"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,fontWeight:700,color:"#b45309"}}>{totSalTemp>0?minsToDisplay(totSalTemp):"—"}</td>
+                        <td style={S.td}></td>
                       </tr>
                     </tbody>
                   </table>
