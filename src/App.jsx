@@ -123,19 +123,28 @@ function fraccionesSalTempCalc(calcsDelRango) {
 // extra que haga DESPUÉS de esa fecha se aplican a saldar la deuda en vez de
 // pagarse, contando solo bloques de 30 min por día (un día con +7min no
 // descuenta nada; uno con +1h04 descuenta 1h y los 4min sobrantes se pagan).
-// Devuelve { deudaTotal, recuperado, pendiente } en minutos.
+// Devuelve { deudaTotal, recuperado, pendiente, saldados } en minutos;
+// saldados = Set de ids de registros cuya deuda quedó totalmente cubierta
+// (se asigna FIFO: las extras van saldando la deuda más vieja primero).
 function calcRecuperacion(calcs) {
   const orden = [...(calcs || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
-  let deuda = 0, deudaTotal = 0, recuperado = 0;
+  const pendientes = []; // {id, resta}
+  const saldados = new Set();
+  let deudaTotal = 0, recuperado = 0;
   for (const r of orden) {
-    if (r.recuperar && r.recuperarMin > 0) { deuda += r.recuperarMin; deudaTotal += r.recuperarMin; }
-    if (deuda > 0 && r.extra > 0 && !r.recuperar) {
-      const aplicable = Math.floor(r.extra / 30) * 30; // solo bloques de 30 min
-      const usa = Math.min(deuda, aplicable);
-      deuda -= usa; recuperado += usa;
+    if (r.recuperar && r.recuperarMin > 0) { pendientes.push({ id: r.id, resta: r.recuperarMin }); deudaTotal += r.recuperarMin; }
+    if (r.extra > 0 && !r.recuperar && pendientes.length) {
+      let aplicable = Math.floor(r.extra / 30) * 30; // solo bloques de 30 min
+      while (aplicable > 0 && pendientes.length) {
+        const d = pendientes[0];
+        const usa = Math.min(d.resta, aplicable);
+        d.resta -= usa; aplicable -= usa; recuperado += usa;
+        if (d.resta === 0) { saldados.add(d.id); pendientes.shift(); }
+      }
     }
   }
-  return { deudaTotal, recuperado, pendiente: deuda };
+  const pendiente = pendientes.reduce((s, d) => s + d.resta, 0);
+  return { deudaTotal, recuperado, pendiente, saldados };
 }
 
 function extractEntradaSalida(row) {
@@ -2657,12 +2666,13 @@ function AppMain({ session }) {
                 .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
 
               const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
-              const totalExtraNetoMin = Math.max(0, totalExtraMin - calcRecuperacion(empCalcs).recuperado);
+              const recuR           = calcRecuperacion(empCalcs);
+              const totalExtraNetoMin = Math.max(0, totalExtraMin - recuR.recuperado);
               const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
                 ? parseFloat(p.hsExtraRelojManual) : null;
               const horasExtra      = (hsRelojOverride !== null ? Math.round(hsRelojOverride*60) : totalExtraNetoMin) / 60;
               const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
-              const fraccionesSt    = fraccionesSalTempCalc(empCalcs);
+              const fraccionesSt    = fraccionesSalTempCalc(empCalcs.filter(r=>!recuR.saldados.has(r.id)));
 
               const allFindeInRange = empCalcs.filter(r=>{const d=new Date(r.fecha+"T12:00:00").getDay();return d===0||d===6;});
               const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
@@ -2917,7 +2927,10 @@ function AppMain({ session }) {
           // Fracciones de demora con tolerancia POR DÍA
           const fraccionesDemora = fraccionesDemoraCalc(rangeCalcs);
           // Retiros anticipados: misma lógica que tardanzas (fracciones de 15 min)
-          const fraccionesSalTemp = fraccionesSalTempCalc(rangeCalcs);
+          // Retiros anticipados: misma lógica que tardanzas (fracciones de 15 min),
+          // pero los retiros con recupero de horas YA SALDADO no se descuentan en plata
+          // (si la deuda sigue pendiente, el descuento se mantiene).
+          const fraccionesSalTemp = fraccionesSalTempCalc(rangeCalcs.filter(r=>!recu.saldados.has(r.id)));
           // (se mantiene el total en horas solo por compatibilidad de display)
           const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
           // Horas extra — decimal para cálculos, HH:MM para mostrar.
