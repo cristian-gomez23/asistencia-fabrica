@@ -115,7 +115,28 @@ function fraccionesDemoraCalc(calcsDelRango) {
 function fraccionesSalTempCalc(calcsDelRango) {
   if (!Array.isArray(calcsDelRango)) return 0;
   return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.salTemprana), 0);
-} 
+}
+
+// ── Recuperación de horas ─────────────────────────────────────────────────
+// Cuando un empleado falta o se retira antes, RRHH puede cargar un registro
+// manual con "horas a recuperar" (siempre en múltiplos de 30 min). Las horas
+// extra que haga DESPUÉS de esa fecha se aplican a saldar la deuda en vez de
+// pagarse, contando solo bloques de 30 min por día (un día con +7min no
+// descuenta nada; uno con +1h04 descuenta 1h y los 4min sobrantes se pagan).
+// Devuelve { deudaTotal, recuperado, pendiente } en minutos.
+function calcRecuperacion(calcs) {
+  const orden = [...(calcs || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
+  let deuda = 0, deudaTotal = 0, recuperado = 0;
+  for (const r of orden) {
+    if (r.recuperar && r.recuperarMin > 0) { deuda += r.recuperarMin; deudaTotal += r.recuperarMin; }
+    if (deuda > 0 && r.extra > 0 && !r.recuperar) {
+      const aplicable = Math.floor(r.extra / 30) * 30; // solo bloques de 30 min
+      const usa = Math.min(deuda, aplicable);
+      deuda -= usa; recuperado += usa;
+    }
+  }
+  return { deudaTotal, recuperado, pendiente: deuda };
+}
 
 function extractEntradaSalida(row) {
   const marks = [4,5,6,7].map(c=>parseTimeVal(row[c])).filter(v=>v!=null).sort((a,b)=>a-b);
@@ -683,6 +704,8 @@ function recToRow(r, periodo) {
     periodo: periodo || r.fecha?.slice(0,7),
     observacion: r.observacion || null,
     ausencia: r.ausencia || null,
+    recuperar: r.recuperar || false,
+    recuperar_min: r.recuperarMin || 0,
   };
 }
 
@@ -693,6 +716,8 @@ function rowToRec(r) {
     soloEntrada: r.solo_entrada, manual: r.manual,
     observacion: r.observacion || null,
     ausencia: r.ausencia || null,
+    recuperar: r.recuperar || false,
+    recuperarMin: r.recuperar_min || 0,
   };
 }
 
@@ -1340,7 +1365,7 @@ function AppMain({ session }) {
 
             <div style={S.infoBox}>
               <p style={{margin:"0 0 10px",fontWeight:600,color:COL.text,fontSize:13}}>Cómo se interpreta el reloj</p>
-              {[["Marcas brutas","Las 4 columnas AM/PM se tratan como marcas de tiempo independientes."],["Orden cronológico","Primera marca = entrada · Última marca = salida. Las marcas intermedias se desestiman."],["Jornada","Muestra las horas configuradas para cada empleado (salida ref. − entrada ref.)."],["Hs. extra","Horas trabajadas fuera del horario: adelanto de entrada + extensión de salida."],["Horarios","Configurá la entrada/salida esperada por empleado en la pestaña Empleados."]].map(([k,v])=>(
+              {[["Marcas brutas","Las 4 columnas AM/PM se tratan como marcas de tiempo independientes."],["Orden cronológico","Primera marca = entrada · Última marca = salida. Las marcas intermedias se desestiman."],["Jornada","Muestra las horas configuradas para cada empleado (salida ref. − entrada ref.)."],["Hs. extra","Horas trabajadas fuera del horario: adelanto de entrada + extensión de salida."],["Horarios","Configurá la entrada/salida esperada por empleado en la pestaña Empleados."],["Recuperación","Un registro manual con horas a recuperar descuenta las hs. extra posteriores en bloques de 30 min; los minutos sueltos se pagan normal."]].map(([k,v])=>(
                 <div key={k} style={{display:"flex",gap:12,marginBottom:7}}>
                   <span style={{color:COL.accent,fontSize:12,fontWeight:600,minWidth:130}}>{k}</span>
                   <span style={{color:COL.textSub,fontSize:12}}>{v}</span>
@@ -1366,7 +1391,7 @@ function AppMain({ session }) {
                 {(recF.desde||recF.hasta)&&<button onClick={()=>setRecF(p=>({...p,desde:"",hasta:""}))} style={S.cancelBtn}>Limpiar fechas</button>}
                 <span style={{color:COL.textFaint,fontSize:12}}>{filteredRecs.length} registros</span>
               </div>
-              <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.desde||"",entrada:"",salida:""});}}
+              <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.desde||"",entrada:"",salida:"",ausencia:"",observacion:"",recuperarMin:""});}}
                 style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:15,lineHeight:1}}>+</span> Agregar registro
               </button>
@@ -1394,8 +1419,21 @@ function AppMain({ session }) {
                     <option value="">— Normal —</option>
                     <option value="aus_just">Ausencia justificada</option>
                     <option value="aus_injust">Ausencia injustificada</option>
+                    <option value="deuda_hs">Salida anticipada · deuda de hs.</option>
                   </select>
                 </div>
+                {newRec.ausencia&&(
+                  <div>
+                    <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Horas a recuperar</div>
+                    <select value={newRec.recuperarMin||""} onChange={e=>setNewRec(p=>({...p,recuperarMin:e.target.value}))}
+                      style={{...S.sInput,width:150,padding:"7px 10px"}}>
+                      <option value="">No recupera</option>
+                      {Array.from({length:18},(_,i)=>(i+1)*30).map(m=>(
+                        <option key={m} value={m}>{minsToDisplay(m)}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {!newRec.ausencia&&<>
                   <div>
                     <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Entrada</div>
@@ -1413,11 +1451,14 @@ function AppMain({ session }) {
                 </div>
                 <div style={{display:"flex",gap:8,flexDirection:"column"}}>
                   {(!newRec.empNo||!newRec.fecha)&&<span style={{fontSize:11,color:"#c53030"}}>* Empleado y fecha requeridos</span>}
+                  {newRec.ausencia==="deuda_hs"&&!Number(newRec.recuperarMin)&&<span style={{fontSize:11,color:"#c53030"}}>* Indicá las horas a recuperar</span>}
                   <div style={{display:"flex",gap:8}}>
                     <button onClick={()=>{
                       if(!newRec.empNo||!newRec.fecha) return;
+                      if(newRec.ausencia==="deuda_hs"&&!Number(newRec.recuperarMin)) return;
                       const emp=employees[Number(newRec.empNo)];
                       if(!emp) return;
+                      const recMin = newRec.ausencia ? (Number(newRec.recuperarMin)||0) : 0;
                       const sufijo = newRec.ausencia ? `_${newRec.ausencia}` : "_manual";
                       const id=`${newRec.empNo}_${newRec.fecha}${sufijo}`;
                       const manRec={
@@ -1427,6 +1468,7 @@ function AppMain({ session }) {
                         salida:  newRec.ausencia ? null : (newRec.salida||null),
                         soloEntrada: false, manual:true,
                         ausencia: newRec.ausencia||null,
+                        recuperar: recMin>0, recuperarMin: recMin,
                         observacion:newRec.observacion||null
                       };
                       setManualRecords(p=>[...p.filter(r=>r.id!==id),manRec]);
@@ -1488,13 +1530,15 @@ function AppMain({ session }) {
                     );
 
                     return(
-                      <tr key={r.id} style={{background:r.ausencia==="aus_injust"?"#fff7ed":r.ausencia==="aus_just"?"#f5f3ff":r.manual?"#fefaf2":i%2===0?"#fff":"#fafbfc"}}>
+                      <tr key={r.id} style={{background:r.ausencia==="deuda_hs"?"#fef2f2":r.ausencia==="aus_injust"?"#fff7ed":r.ausencia==="aus_just"?"#f5f3ff":r.manual?"#fefaf2":i%2===0?"#fff":"#fafbfc"}}>
                         <td style={{...S.td,fontFamily:MONO,fontSize:12,color:COL.accent}}>{r.empNo}</td>
                         <td style={{...S.td,textAlign:"left",fontWeight:500,color:COL.text}}>
                           {cap(r.nombre)}
                           {r.manual&&!r.ausencia&&<span style={{marginLeft:7,fontSize:10,background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 6px",fontWeight:600}}>manual</span>}
                           {r.ausencia==="aus_just"&&<span style={{marginLeft:7,fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 6px",fontWeight:600}}>AUS. JUST.</span>}
                           {r.ausencia==="aus_injust"&&<span style={{marginLeft:7,fontSize:10,background:"#ffedd5",color:"#dc6b19",borderRadius:4,padding:"1px 6px",fontWeight:600}}>AUS. INJUST.</span>}
+                          {r.ausencia==="deuda_hs"&&<span style={{marginLeft:7,fontSize:10,background:"#fee2e2",color:"#b91c1c",borderRadius:4,padding:"1px 6px",fontWeight:600}}>SAL. ANTICIPADA</span>}
+                          {r.recuperar&&r.recuperarMin>0&&<span style={{marginLeft:5,fontSize:10,background:"#e0f2fe",color:"#0369a1",borderRadius:4,padding:"1px 6px",fontWeight:600}}>recupera {minsToDisplay(r.recuperarMin)}</span>}
                         </td>
                         <td style={{...S.td,padding:"5px 8px"}}>
                           {employees[r.empNo]&&<TipoBadge tipo={employees[r.empNo].tipo||"operario"} small/>}
@@ -1803,6 +1847,8 @@ function AppMain({ session }) {
           const diasConDemora = selCalcs.filter(r=>r.demora>0).length;
           const diasConExtra  = selCalcs.filter(r=>r.extra>0).length;
           const diasConST     = selCalcs.filter(r=>r.salTemprana>0).length;
+          const recu          = calcRecuperacion(selCalcs);
+          const totExtraNeto  = Math.max(0, totExtra - recu.recuperado);
 
           return(
             <div style={{maxWidth:860}}>
@@ -1832,7 +1878,7 @@ function AppMain({ session }) {
                   {[
                     {l:"Días presentes",  v:selCalcs.length,                                    c:COL.accent},
                     {l:"En jornada total", v:minsToDisplay(totTrabajado),                        c:COL.textSub},
-                    {l:"Hs. extra",       v:totExtra>0?`+${minsToDisplay(totExtra)}`:"—",       c:"#276749"},
+                    {l:recu.deudaTotal>0?"Hs. extra (netas)":"Hs. extra", v:totExtraNeto>0?`+${minsToDisplay(totExtraNeto)}`:"—", c:"#276749"},
                     {l:"Total demoras",   v:totDemora>0?minsToDisplay(totDemora):"—",           c:"#c53030"},
                     {l:"Sal. tempranas",  v:totSalTemp>0?minsToDisplay(totSalTemp):"—",         c:"#b45309"},
                   ].map(({l,v,c})=>(
@@ -1849,6 +1895,11 @@ function AppMain({ session }) {
                     {l:"Días con hs. extra",     v:`${diasConExtra} día${diasConExtra!==1?"s":""}`,    c:"#276749"},
                     {l:"Días con sal. temprana", v:`${diasConST} día${diasConST!==1?"s":""}`,          c:"#b45309"},
                     {l:"Jornada esperada total", v:minsToDisplay(totJornada),                          c:COL.textSub},
+                    ...(recu.deudaTotal>0?[
+                      {l:"Hs. a recuperar",  v:minsToDisplay(recu.deudaTotal),                        c:"#b91c1c"},
+                      {l:"Hs. recuperadas",  v:recu.recuperado>0?minsToDisplay(recu.recuperado):"—",  c:"#0369a1"},
+                      {l:"Deuda pendiente",  v:recu.pendiente>0?minsToDisplay(recu.pendiente):"Saldada", c:recu.pendiente>0?"#b91c1c":"#276749"},
+                    ]:[]),
                   ].map(({l,v,c})=>(
                     <div key={l} style={{background:COL.accentBg,borderRadius:8,padding:"8px 14px",display:"flex",gap:8,alignItems:"center"}}>
                       <span style={{fontSize:11,color:COL.textFaint}}>{l}</span>
@@ -2576,9 +2627,10 @@ function AppMain({ session }) {
                 .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
 
               const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
+              const totalExtraNetoMin = Math.max(0, totalExtraMin - calcRecuperacion(empCalcs).recuperado);
               const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
                 ? parseFloat(p.hsExtraRelojManual) : null;
-              const horasExtra      = (hsRelojOverride !== null ? Math.round(hsRelojOverride*60) : totalExtraMin) / 60;
+              const horasExtra      = (hsRelojOverride !== null ? Math.round(hsRelojOverride*60) : totalExtraNetoMin) / 60;
               const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
               const fraccionesSt    = fraccionesSalTempCalc(empCalcs);
 
@@ -2808,6 +2860,10 @@ function AppMain({ session }) {
           const totalDemoraMin   = rangeCalcs.reduce((s,r)=>s+(r.demora||0),0);
           const totalSalTempMin  = rangeCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
           const totalExtraMin    = rangeCalcs.reduce((s,r)=>s+(r.extra||0),0);
+          // Recuperación de horas: la deuda cargada se descuenta de las extras
+          // posteriores (bloques de 30 min); solo se paga el neto.
+          const recu             = calcRecuperacion(rangeCalcs);
+          const totalExtraNetoMin= Math.max(0, totalExtraMin - recu.recuperado);
           // Finde dates: all sat/sun in range (with or without record)
           const allFindeInRange = (()=>{
             if (!desde && !hasta && rangeCalcs.length === 0) return [];
@@ -2838,8 +2894,8 @@ function AppMain({ session }) {
           // Si RRHH cargó una corrección manual (hsExtraRelojManual), ESA manda.
           const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
             ? parseFloat(p.hsExtraRelojManual) : null;
-          const extraMinFinal   = hsRelojOverride !== null ? Math.round(hsRelojOverride * 60) : totalExtraMin;
-          const horasExtraRelojDisplay = minsToDisplay(totalExtraMin); // lo que marcó el reloj
+          const extraMinFinal   = hsRelojOverride !== null ? Math.round(hsRelojOverride * 60) : totalExtraNetoMin;
+          const horasExtraRelojDisplay = minsToDisplay(totalExtraMin); // lo que marcó el reloj (bruto)
           const horasExtra        = parseFloat((extraMinFinal / 60).toFixed(10)); // full precision for math
           const horasExtraDisplay = minsToDisplay(extraMinFinal); // ej: 38h26
 
@@ -3383,7 +3439,12 @@ function AppMain({ session }) {
                         return [
                           ["Días trabajados",           diasTrabajados,       "días (referencia)"],
                           ["Días finde trabajados",     diasFinde,            "días"],
-                          ["Horas extra",               horasExtraDisplay,    ""],
+                          ["Horas extra",               horasExtraDisplay,    recu.recuperado>0?`netas (reloj: ${horasExtraRelojDisplay})`:""],
+                          ...(recu.deudaTotal>0 ? [
+                            ["Hs. a recuperar",   minsToDisplay(recu.deudaTotal),  "deuda cargada"],
+                            ["Hs. recuperadas",   recu.recuperado>0?minsToDisplay(recu.recuperado):"—", "descontadas de extras"],
+                            [recu.pendiente>0?"⚠ Deuda pendiente":"Deuda saldada", recu.pendiente>0?minsToDisplay(recu.pendiente):"✓", ""],
+                          ] : []),
                           ["Demoras (fracc. 15 min)",   fraccionesDemora,     "fracciones"],
                           ["Retiros (fracc. 15 min)",   fraccionesSalTemp,    "fracciones"],
                           ...(ausJust.length   ? [["Ausencias justificadas",   ausJust.length,   "días — no descuenta"]] : []),
@@ -3423,7 +3484,8 @@ function AppMain({ session }) {
                           <LiqRow label="SUELDO BÁSICO" cantidad="" valor="" importe={fmt(importeSueldo)} bold />
 
                           <LiqRow label="ADICIONALES" cantidad="" valor="" importe="" bold separator />
-                          <LiqRow label={`Horas extra (reloj)${impExtrasManual!==null?" ✎":""}`} indent cantidad={horasExtraDisplay} valor={impExtrasManual!==null?"—":fmt(valorHoraExt)} importe={impExtrasReloj?fmt(impExtrasReloj):"—"} />
+                          <LiqRow label={`Horas extra (reloj)${impExtrasManual!==null?" ✎":""}${recu.recuperado>0?" — netas":""}`} indent cantidad={horasExtraDisplay} valor={impExtrasManual!==null?"—":fmt(valorHoraExt)} importe={impExtrasReloj?fmt(impExtrasReloj):"—"} />
+                          {recu.recuperado>0&&<LiqRow label="Hs. recuperadas (no se pagan)" indent cantidad={`−${minsToDisplay(recu.recuperado)}`} valor="—" importe="—" />}
                           {importeExtraManual>0&&<LiqRow label="Horas extra (manual)" indent cantidad={horasExtraManualDisplay} valor={fmt(valorHoraExt)} importe={fmt(importeExtraManual)} />}
                           <LiqRow label={`Días finde/especiales${impFindeManual!==null?" ✎":""}`} indent cantidad={diasFinde||"—"} valor={impFindeManual!==null?"—":(diasFinde?fmt(valorDiaFinde):"—")} importe={importeFinde?fmt(importeFinde):"—"} />
                           <LiqRow label={`Feriados${impFeriadosManual!==null?" ✎":""}`}          indent cantidad={feriados||"—"}  valor={impFeriadosManual!==null?"—":fmt(valorDia)}     importe={importeFeriados?fmt(importeFeriados):"—"} />
