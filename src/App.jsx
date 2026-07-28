@@ -1006,7 +1006,7 @@ function AppMain({ session }) {
       const wb=XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:false});
       const wsName=wb.SheetNames.find(n=>n==="Anormal")||wb.SheetNames[0];
       const parsed=parseAnormalSheet(wb.Sheets[wsName]);
-      setRecords(prev=>{const m={};for(const r of prev)m[r.id]=r;for(const r of parsed)m[r.id]=r;return Object.values(m);});
+      setRecords(prev=>{const m={};for(const r of prev)m[r.id]=r;for(const r of parsed){const ex=m[r.id];m[r.id]= ex ? {...r, observacion:ex.observacion??null, recuperar:ex.recuperar||false, recuperarMin:ex.recuperarMin||0} : r;}return Object.values(m);});
       // ── Detección de empleados nuevos y de números de reloj REASIGNADOS ──
       // Si un N° ya existe pero la planilla trae OTRO nombre, el reloj
       // recicló el número: se pisa la ficha con el empleado nuevo y se
@@ -1053,7 +1053,9 @@ function AppMain({ session }) {
       });
       // Sync to Supabase silently
       const periodo = parsed[0]?.fecha?.slice(0,7);
-      sbUpsert("registros", parsed.map(r=>recToRow(r,periodo)));
+      // No mandar recuperar/observacion en la importación: con merge-duplicates
+      // Supabase conserva lo que ya tenía cargado RRHH en esos campos.
+      sbUpsert("registros", parsed.map(r=>{const row=recToRow(r,periodo); delete row.recuperar; delete row.recuperar_min; delete row.observacion; return row;}));
     } catch(err){setImportMsg({text:`Error: ${err.message}`,ok:false});}
     setImporting(false);
     if(fileRef.current)fileRef.current.value="";
@@ -1553,7 +1555,35 @@ function AppMain({ session }) {
                           {c.extra!=null ? `+${minsToDisplay(c.extra)}` : "—"}
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:c.demora>0?"#c53030":"#c0c8d2"}}>{c.demora>0?minsToDisplay(c.demora):"—"}</td>
-                        <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>{c.salTemprana>0?minsToDisplay(c.salTemprana):"—"}</td>
+                        <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>
+                          {isEditing("recuperar")
+                            ? <select autoFocus
+                                defaultValue={r.recuperarMin||Math.ceil((c.salTemprana||30)/30)*30}
+                                onChange={e=>{
+                                  const min=Number(e.target.value)||0;
+                                  const patch={recuperar:min>0,recuperarMin:min};
+                                  if(r.manual) setManualRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
+                                  else setRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
+                                  sbUpdate("registros",r.id,{recuperar:min>0,recuperar_min:min},"id");
+                                  setEditingCell(null);
+                                }}
+                                onBlur={()=>setEditingCell(null)}
+                                onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);}}
+                                style={{...S.inlineInput,fontSize:11,padding:"3px 6px"}}>
+                                <option value={0}>No recupera</option>
+                                {Array.from({length:18},(_,i)=>(i+1)*30).map(m=>(
+                                  <option key={m} value={m}>{minsToDisplay(m)}</option>
+                                ))}
+                              </select>
+                            : c.salTemprana>0||r.recuperar
+                            ? <span onClick={()=>setEditingCell({id:r.id,field:"recuperar"})}
+                                title="Click para marcar horas a recuperar"
+                                style={{cursor:"pointer",borderBottom:"1px dashed #d1d5db",display:"inline-flex",gap:6,alignItems:"center"}}>
+                                {c.salTemprana>0?minsToDisplay(c.salTemprana):"—"}
+                                {r.recuperar&&r.recuperarMin>0&&<span style={{fontSize:10,fontFamily:SANS,background:"#e0f2fe",color:"#0369a1",borderRadius:4,padding:"1px 5px",fontWeight:600}}>rec. {minsToDisplay(r.recuperarMin)}</span>}
+                              </span>
+                            : "—"}
+                        </td>
                         <td style={{...S.td,fontSize:11,padding:"4px 8px",maxWidth:140}}>
                           {editingCell?.id===r.id&&editingCell?.field==="observacion"
                             ? <input autoFocus
