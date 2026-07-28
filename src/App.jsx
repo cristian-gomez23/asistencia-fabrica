@@ -817,6 +817,7 @@ function AppMain({ session }) {
   const [verPlanillaHist, setVerPlanillaHist] = useState(false); // planilla global de histórico
   const [nuevoPeriodoOpen, setNuevoPeriodoOpen] = useState(false); // modal de nuevo período
   const [resumenMes, setResumenMes] = useState(""); // "YYYY-MM" filtro de mes en Resumen
+  const [detalleMes, setDetalleMes] = useState(""); // "YYYY-MM" filtro de mes en Por empleado ("" = todo)
   const fileRef = useRef();
 
   // ── Sincronización de liqParams con Supabase (única persistencia) ────────
@@ -1867,7 +1868,9 @@ function AppMain({ session }) {
           const empOptions = empList.filter(e=>e.activo!==false&&(e.sinReloj||records.some(r=>r.empNo===e.empNo)));
           const selEmp     = detalleEmp ? employees[detalleEmp] : null;
           const selSummary = selEmp ? empSummary.find(s=>s.emp.empNo===selEmp.empNo) : null;
-          const selCalcs   = selSummary ? [...selSummary.calcs].sort((a,b)=>a.fecha.localeCompare(b.fecha)) : [];
+          const allSelCalcs = selSummary ? [...selSummary.calcs].sort((a,b)=>a.fecha.localeCompare(b.fecha)) : [];
+          const mesesEmp   = [...new Set(allSelCalcs.map(r=>r.fecha?.slice(0,7)).filter(Boolean))].sort().reverse();
+          const selCalcs   = detalleMes ? allSelCalcs.filter(r=>r.fecha?.startsWith(detalleMes)) : allSelCalcs;
 
           const totTrabajado = selCalcs.reduce((s,r)=>s+(r.trabajado||0),0);
           const totJornada   = selCalcs.reduce((s,r)=>s+(r.jornada||0),0);
@@ -1894,12 +1897,28 @@ function AppMain({ session }) {
                     <option key={e.empNo} value={e.empNo}>{e.empNo} · {cap(e.nombre)}</option>
                   ))}
                 </select>
+                {selEmp&&mesesEmp.length>0&&(
+                  <select value={detalleMes} onChange={e=>setDetalleMes(e.target.value)}
+                    style={{background:COL.surface,border:`1px solid ${COL.border2}`,borderRadius:8,color:COL.text,padding:"8px 14px",fontFamily:SANS,fontSize:13,outline:"none",cursor:"pointer"}}>
+                    <option value="">Todo el historial</option>
+                    {mesesEmp.map(m=>{
+                      const MESES_N=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                      return <option key={m} value={m}>{MESES_N[Number(m.slice(5,7))-1]} {m.slice(0,4)}</option>;
+                    })}
+                  </select>
+                )}
                 {selEmp&&<span style={{...S.chip,background:"#f0faf4",color:"#276749"}}>Horario: {selEmp.entrada} – {selEmp.salida}</span>}
               </div>
 
               {!selEmp&&(
                 <div style={{padding:"60px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,background:COL.surface,borderRadius:12,border:`1px solid ${COL.border}`}}>
                   Elegí un empleado en el selector de arriba para ver su detalle.
+                </div>
+              )}
+
+              {selEmp&&selCalcs.length===0&&(
+                <div style={{padding:"40px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,background:COL.surface,borderRadius:12,border:`1px solid ${COL.border}`}}>
+                  Sin registros {detalleMes?"en el mes seleccionado":"para este empleado"}.
                 </div>
               )}
 
