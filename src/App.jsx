@@ -1376,7 +1376,7 @@ function AppMain({ session }) {
 
             <div style={S.infoBox}>
               <p style={{margin:"0 0 10px",fontWeight:600,color:COL.text,fontSize:13}}>Cómo se interpreta el reloj</p>
-              {[["Marcas brutas","Las 4 columnas AM/PM se tratan como marcas de tiempo independientes."],["Orden cronológico","Primera marca = entrada · Última marca = salida. Las marcas intermedias se desestiman."],["Jornada","Muestra las horas configuradas para cada empleado (salida ref. − entrada ref.)."],["Hs. extra","Horas trabajadas fuera del horario: adelanto de entrada + extensión de salida."],["Horarios","Configurá la entrada/salida esperada por empleado en la pestaña Empleados."],["Recuperación","Un registro manual con horas a recuperar descuenta las hs. extra posteriores en bloques de 30 min; los minutos sueltos se pagan normal."]].map(([k,v])=>(
+              {[["Marcas brutas","Las 4 columnas AM/PM se tratan como marcas de tiempo independientes."],["Orden cronológico","Primera marca = entrada · Última marca = salida. Las marcas intermedias se desestiman."],["Jornada","Muestra las horas configuradas para cada empleado (salida ref. − entrada ref.)."],["Hs. extra","Horas trabajadas fuera del horario: adelanto de entrada + extensión de salida."],["Horarios","Configurá la entrada/salida esperada por empleado en la pestaña Empleados."],["Recuperación","La deuda puede ser exacta (lo que salió antes) o redonda; para saldarla, las hs. extra posteriores cuentan por bloques de 30 min y el sobrante se paga normal."]].map(([k,v])=>(
                 <div key={k} style={{display:"flex",gap:12,marginBottom:7}}>
                   <span style={{color:COL.accent,fontSize:12,fontWeight:600,minWidth:130}}>{k}</span>
                   <span style={{color:COL.textSub,fontSize:12}}>{v}</span>
@@ -1435,14 +1435,10 @@ function AppMain({ session }) {
                 </div>
                 {newRec.ausencia&&(
                   <div>
-                    <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Horas a recuperar</div>
-                    <select value={newRec.recuperarMin||""} onChange={e=>setNewRec(p=>({...p,recuperarMin:e.target.value}))}
-                      style={{...S.sInput,width:150,padding:"7px 10px"}}>
-                      <option value="">No recupera</option>
-                      {Array.from({length:18},(_,i)=>(i+1)*30).map(m=>(
-                        <option key={m} value={m}>{minsToDisplay(m)}</option>
-                      ))}
-                    </select>
+                    <div style={{fontSize:11,color:COL.textFaint,marginBottom:4,fontWeight:500}}>Tiempo a recuperar</div>
+                    <input type="time" value={newRec.recuperarMin||""}
+                      onChange={e=>setNewRec(p=>({...p,recuperarMin:e.target.value}))}
+                      style={S.tInp} title="hh:mm — dejalo vacío si no recupera"/>
                   </div>
                 )}
                 {!newRec.ausencia&&<>
@@ -1462,14 +1458,14 @@ function AppMain({ session }) {
                 </div>
                 <div style={{display:"flex",gap:8,flexDirection:"column"}}>
                   {(!newRec.empNo||!newRec.fecha)&&<span style={{fontSize:11,color:"#c53030"}}>* Empleado y fecha requeridos</span>}
-                  {newRec.ausencia==="deuda_hs"&&!Number(newRec.recuperarMin)&&<span style={{fontSize:11,color:"#c53030"}}>* Indicá las horas a recuperar</span>}
+                  {newRec.ausencia==="deuda_hs"&&!parseTimeVal(newRec.recuperarMin)&&<span style={{fontSize:11,color:"#c53030"}}>* Indicá el tiempo a recuperar</span>}
                   <div style={{display:"flex",gap:8}}>
                     <button onClick={()=>{
                       if(!newRec.empNo||!newRec.fecha) return;
-                      if(newRec.ausencia==="deuda_hs"&&!Number(newRec.recuperarMin)) return;
+                      if(newRec.ausencia==="deuda_hs"&&!parseTimeVal(newRec.recuperarMin)) return;
                       const emp=employees[Number(newRec.empNo)];
                       if(!emp) return;
-                      const recMin = newRec.ausencia ? (Number(newRec.recuperarMin)||0) : 0;
+                      const recMin = newRec.ausencia ? (parseTimeVal(newRec.recuperarMin)||0) : 0;
                       const sufijo = newRec.ausencia ? `_${newRec.ausencia}` : "_manual";
                       const id=`${newRec.empNo}_${newRec.fecha}${sufijo}`;
                       const manRec={
@@ -1566,24 +1562,19 @@ function AppMain({ session }) {
                         <td style={{...S.td,fontFamily:MONO,color:c.demora>0?"#c53030":"#c0c8d2"}}>{c.demora>0?minsToDisplay(c.demora):"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>
                           {isEditing("recuperar")
-                            ? <select autoFocus
-                                defaultValue={r.recuperarMin||Math.ceil((c.salTemprana||30)/30)*30}
-                                onChange={e=>{
-                                  const min=Number(e.target.value)||0;
+                            ? <input type="time" autoFocus
+                                defaultValue={minsToHHMM(r.recuperarMin||c.salTemprana||0)}
+                                onBlur={e=>{
+                                  const min=parseTimeVal(e.target.value)||0;
                                   const patch={recuperar:min>0,recuperarMin:min};
                                   if(r.manual) setManualRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
                                   else setRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
                                   sbUpdate("registros",r.id,{recuperar:min>0,recuperar_min:min},"id");
                                   setEditingCell(null);
                                 }}
-                                onBlur={()=>setEditingCell(null)}
-                                onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);}}
-                                style={{...S.inlineInput,fontSize:11,padding:"3px 6px"}}>
-                                <option value={0}>No recupera</option>
-                                {Array.from({length:18},(_,i)=>(i+1)*30).map(m=>(
-                                  <option key={m} value={m}>{minsToDisplay(m)}</option>
-                                ))}
-                              </select>
+                                onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);if(e.key==="Enter")e.target.blur();}}
+                                title="hh:mm a recuperar — 00:00 o vacío = no recupera"
+                                style={{...S.inlineInput,fontSize:11,padding:"3px 6px",width:88}}/>
                             : c.salTemprana>0||r.recuperar
                             ? <span onClick={()=>setEditingCell({id:r.id,field:"recuperar"})}
                                 title="Click para marcar horas a recuperar"
