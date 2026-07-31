@@ -199,20 +199,36 @@ function calcRecord(rec, empCfg, specialDays) {
   const esSabado   = diaSemana === 6;
   const esDomingo  = diaSemana === 0;
   const esFeriado  = dayType?.tipo === "feriado";
-  // Operarios no acumulan horas extra en sábados, domingos ni feriados
-  const sinExtra   = esOperario && (esSabado || esDomingo || esFeriado);
+
+  if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra:null, demora:null, salTemprana:null };
+
+  const entMin = parseTimeVal(rec.entrada);
+  const salMin = parseTimeVal(rec.salida);
+
+  // ── Administrativos: sábados, domingos y feriados NO son obligatorios ──
+  // Todo lo que trabajen esos días se paga como hora extra, y no corresponde
+  // computarles demora ni salida temprana (no tienen horario que cumplir).
+  if (!esOperario && (esSabado || esDomingo || esFeriado)) {
+    const total = Math.max(0, salMin - entMin);
+    return { trabajado:0, jornada:0, extra: total>0 ? total : null, demora:0, salTemprana:0 };
+  }
+
+  // Horario de referencia efectivo del día (feriado y sábado acortan la salida)
   const effectiveCfg = esFeriado
     ? { entrada: cfg.entrada, salida: dayType?.salida || "14:00" }
     : esSabado
     ? { entrada: cfg.entrada, salida: "13:00" }
     : cfg;
-  if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra:null, demora:null, salTemprana:null };
-  const entMin = parseTimeVal(rec.entrada);
-  const salMin = parseTimeVal(rec.salida);
+
+  // ── Operarios ──
+  // Sábados y domingos no acumulan horas extra.
+  // Los FERIADOS sí: la salida reducida (ej. 14:00) existe para que irse a esa
+  // hora no cuente como retiro anticipado, y lo trabajado después son extras.
+  const sinExtra = esOperario && (esSabado || esDomingo);
+
   const entRef = parseTimeVal(effectiveCfg.entrada);
   const salRef = parseTimeVal(effectiveCfg.salida);
   const jornada = salRef - entRef;
-  // Horas extra
   let extra = null;
   if (!sinExtra) {
     // Operarios: horas extra desde 06:00 am como mínimo
