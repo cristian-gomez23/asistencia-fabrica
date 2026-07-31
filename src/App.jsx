@@ -546,15 +546,14 @@ function exportXLSX(rows, headers, sheetName, fileName) {
   XLSX.writeFile(wb, fileName);
 }
 
-
 const DIAS_SEMANA  = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 const MESES_LARGO  = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 const AUSENCIA_LABEL = { aus_just:"Ausencia justificada", aus_injust:"Ausencia injustificada", deuda_hs:"Salida anticipada" };
 function sheetNameSafe(s){ return s.replace(/[\\/?*[\]:]/g,"").slice(0,31).trim()||"Empleado"; }
- 
+
 function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays){
   if(!recs.length){ alert("No hay registros para exportar con los filtros actuales."); return; }
- 
+
   /* estilos */
   const BD  = s => ({top:{style:s,color:{rgb:"D4DBE4"}},bottom:{style:s,color:{rgb:"D4DBE4"}},left:{style:s,color:{rgb:"D4DBE4"}},right:{style:s,color:{rgb:"D4DBE4"}}});
   const ST = {
@@ -568,6 +567,9 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
     finde:   {font:{name:"Calibri",sz:10,color:{rgb:"B45309"}},fill:{fgColor:{rgb:"FDF6EC"}},alignment:{horizontal:"center"},border:BD("thin")},
     extra:   {font:{name:"Calibri",sz:10,bold:true,color:{rgb:"276749"}},alignment:{horizontal:"center"},border:BD("thin")},
     negat:   {font:{name:"Calibri",sz:10,color:{rgb:"C53030"}},alignment:{horizontal:"center"},border:BD("thin")},
+    vacio:   {font:{name:"Calibri",sz:10,italic:true,color:{rgb:"B0BBC8"}},fill:{fgColor:{rgb:"F7F8FA"}},alignment:{horizontal:"center"},border:BD("thin")},
+    vacioIzq:{font:{name:"Calibri",sz:10,italic:true,color:{rgb:"B0BBC8"}},fill:{fgColor:{rgb:"F7F8FA"}},alignment:{horizontal:"left"},border:BD("thin")},
+    vacioFin:{font:{name:"Calibri",sz:10,italic:true,color:{rgb:"D9B98A"}},fill:{fgColor:{rgb:"FDF6EC"}},alignment:{horizontal:"center"},border:BD("thin")},
     total:   {font:{name:"Calibri",bold:true,sz:10,color:{rgb:"1A3A6B"}},fill:{fgColor:{rgb:"EDF2F9"}},alignment:{horizontal:"center"},border:BD("thin")},
     totalIzq:{font:{name:"Calibri",bold:true,sz:10,color:{rgb:"1A3A6B"}},fill:{fgColor:{rgb:"EDF2F9"}},alignment:{horizontal:"left"},border:BD("thin")},
     gtotal:  {font:{name:"Calibri",bold:true,sz:11,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A3A6B"}},alignment:{horizontal:"center"},border:BD("thin")},
@@ -577,21 +579,21 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
   const hora = min => ({v:min/1440, t:"n", z:"hh:mm"});           // hora del día
   const dur  = min => ({v:min/1440, t:"n", z:HHMM});              // duración sumable
   const txt  = (v,s) => ({v:v??"", t:"s", s});
- 
+
   const HEADERS = ["Día","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana","A recuperar","Ausencia","Observación"];
   const NCOLS = HEADERS.length;
- 
+
   const porEmp = {};
   for(const r of recs)(porEmp[r.empNo] ||= []).push(r);
- 
+
   const wb = XLSXS.utils.book_new();
   const usados = new Set();
   const empNos = Object.keys(porEmp).map(Number).sort((a,b)=>a-b);
- 
+
   for(const empNo of empNos){
     const emp  = employees[empNo];
     const rows = porEmp[empNo].sort((a,b)=>a.fecha.localeCompare(b.fecha));
- 
+
     const ws = {};
     const merges = [];
     let R = 0;
@@ -599,28 +601,54 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
     const fila = (cells)=>{ cells.forEach((cell,c)=>put(R,c,cell)); R++; };
     const filaMerge = (cell,alto)=>{ merges.push({s:{r:R,c:0},e:{r:R,c:NCOLS-1}});
       put(R,0,cell); for(let c=1;c<NCOLS;c++) put(R,c,{v:"",t:"s",s:cell.s}); R++; };
- 
+
     /* ── Encabezado de la hoja ── */
     filaMerge({v:"PYG S.R.L. — REGISTRO DE ASISTENCIA", t:"s", s:ST.titulo});
     filaMerge({v:`N° ${empNo} · ${cap(rows[0].nombre)} — ${cap(emp?.tipo||"operario")} · Horario ref. ${emp?.entrada||"06:00"} a ${emp?.salida||"16:30"}`, t:"s", s:ST.subtit});
     filaMerge({v:`Período: ${rows[0].fecha} a ${rows[rows.length-1].fecha} · Generado el ${new Date().toLocaleDateString("es-AR")}`, t:"s", s:ST.meta});
     R++; // fila en blanco
- 
+
     /* ── Agrupar por mes ── */
     const porMes = {};
     for(const r of rows)(porMes[r.fecha.slice(0,7)] ||= []).push(r);
- 
+
     const gran = {dias:0, jornada:0, extra:0, demora:0, salTemp:0};
- 
+
     for(const mesKey of Object.keys(porMes).sort()){
       const mesRows = porMes[mesKey];
       const [y,m] = mesKey.split("-");
       filaMerge({v:`${MESES_LARGO[+m-1]} ${y}`, t:"s", s:ST.mes});
       fila(HEADERS.map(h=>({v:h,t:"s",s:ST.head})));
- 
+
       const sub = {dias:0, jornada:0, extra:0, demora:0, salTemp:0};
- 
-      for(const r of mesRows){
+
+      // Completar días sin registro entre el primero y el último del mes
+      const porFecha = {};
+      for(const r of mesRows) porFecha[r.fecha] = r;
+      const fechas = [];
+      {
+        const d0 = new Date(mesRows[0].fecha+"T12:00:00");
+        const d1 = new Date(mesRows[mesRows.length-1].fecha+"T12:00:00");
+        for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1))
+          fechas.push(d.toISOString().slice(0,10));
+      }
+
+      for(const fecha of fechas){
+        const r = porFecha[fecha];
+        if(!r){
+          const d = new Date(fecha+"T12:00:00");
+          const esFinde = d.getDay()===0||d.getDay()===6;
+          const sv = esFinde ? ST.vacioFin : ST.vacio;
+          const svIzq = esFinde ? {...ST.vacioFin,alignment:{horizontal:"left"}} : ST.vacioIzq;
+          fila([
+            txt(DIAS_SEMANA[d.getDay()], svIzq),
+            {v:d, t:"d", z:"dd/mm/yyyy", s:sv},
+            txt("", sv), txt("", sv), txt("", sv), txt("", sv), txt("", sv), txt("", sv), txt("", sv),
+            txt(esFinde ? "" : "Sin registro", sv),
+            txt("", sv),
+          ]);
+          continue;
+        }
         const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
         const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
         const c = calcRecord({...r, entrada, salida}, emp, specialDays);
@@ -628,12 +656,12 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
         const esFinde = d.getDay()===0||d.getDay()===6;
         const base = esFinde ? ST.finde : ST.celda;
         const baseIzq = esFinde ? {...ST.finde,alignment:{horizontal:"left"}} : ST.celdaIzq;
- 
+
         if(c.trabajado!=null){ sub.dias++; sub.jornada+=c.trabajado; }
         if(c.extra)        sub.extra   += c.extra;
         if(c.demora)       sub.demora  += c.demora;
         if(c.salTemprana)  sub.salTemp += c.salTemprana;
- 
+
         fila([
           txt(DIAS_SEMANA[d.getDay()], baseIzq),
           {v:d, t:"d", z:"dd/mm/yyyy", s:base},
@@ -648,10 +676,10 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
           txt(r.observacion||"", baseIzq),
         ]);
       }
- 
+
       gran.dias+=sub.dias; gran.jornada+=sub.jornada; gran.extra+=sub.extra;
       gran.demora+=sub.demora; gran.salTemp+=sub.salTemp;
- 
+
       fila([
         txt(`Total ${MESES_LARGO[+m-1].toLowerCase()}`, ST.totalIzq),
         txt(`${sub.dias} días`, ST.total),
@@ -664,7 +692,7 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
       ]);
       R++; // fila en blanco entre meses
     }
- 
+
     /* ── Total general ── */
     fila([
       txt("TOTAL GENERAL", ST.gtotalIzq),
@@ -676,19 +704,19 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
       gran.salTemp ? {...dur(gran.salTemp), s:ST.gtotal} : txt("", ST.gtotal),
       txt("", ST.gtotal), txt("", ST.gtotal), txt("", ST.gtotal),
     ]);
- 
+
     ws["!ref"]    = XLSXS.utils.encode_range({s:{r:0,c:0},e:{r:R-1,c:NCOLS-1}});
     ws["!merges"] = merges;
     ws["!cols"]   = [{wch:11},{wch:11},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:13},{wch:12},{wch:20},{wch:28}];
     ws["!rows"]   = [{hpt:24},{hpt:18},{hpt:14}];
- 
+
     let name = sheetNameSafe(`${empNo} ${cap(rows[0].nombre)}`);
     let base = name, n = 2;
     while(usados.has(name)) name = sheetNameSafe(`${base.slice(0,28)}_${n++}`);
     usados.add(name);
     XLSXS.utils.book_append_sheet(wb, ws, name);
   }
- 
+
   const hoy = new Date().toISOString().slice(0,10);
   XLSXS.writeFile(wb, `registros_asistencia_${hoy}.xlsx`);
 }
@@ -943,6 +971,7 @@ function AppMain({ session }) {
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState({text:"",ok:true});
   const [recF, setRecF]           = useState({emp:"",desde:"",hasta:""});
+  const [exportMes, setExportMes] = useState(""); // "" = todos los meses
   const [empF, setEmpF]           = useState("");
   const [detalleEmp, setDetalleEmp] = useState(null); // empNo selected in Por empleado tab
   const [liqEmp, setLiqEmp]         = useState(null);   // empNo selected in Liquidación tab
@@ -1551,9 +1580,19 @@ function AppMain({ session }) {
                 {(recF.desde||recF.hasta)&&<button onClick={()=>setRecF(p=>({...p,desde:"",hasta:""}))} style={S.cancelBtn}>Limpiar fechas</button>}
                 <span style={{color:COL.textFaint,fontSize:12}}>{filteredRecs.length} registros</span>
               </div>
-                <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                <select value={exportMes} onChange={e=>setExportMes(e.target.value)}
+                  style={{...S.sInput,width:190,padding:"6px 10px",fontSize:12,cursor:"pointer"}}>
+                  <option value="">Exportar: todos los meses</option>
+                  {[...new Set(filteredRecs.map(r=>r.fecha?.slice(0,7)).filter(Boolean))].sort().reverse().map(m=>{
+                    const MN=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                    return <option key={m} value={m}>Exportar: {MN[+m.slice(5,7)-1]} {m.slice(0,4)}</option>;
+                  })}
+                </select>
                 <button
-                  onClick={()=>exportRegistrosPorEmpleado(filteredRecs, employees, manualSalidas, specialDays)}
+                  onClick={()=>exportRegistrosPorEmpleado(
+                    exportMes ? filteredRecs.filter(r=>r.fecha?.startsWith(exportMes)) : filteredRecs,
+                    employees, manualSalidas, specialDays)}
                   style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
                 </button>
