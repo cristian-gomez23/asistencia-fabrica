@@ -547,6 +547,7 @@ function exportXLSX(rows, headers, sheetName, fileName) {
 }
 
 const DIAS_SEMANA  = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const DIAS_CORTO_TBL = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MESES_LARGO  = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
 const AUSENCIA_LABEL = { aus_just:"Ausencia justificada", aus_injust:"Ausencia injustificada", deuda_hs:"Salida anticipada" };
 function sheetNameSafe(s){ return s.replace(/[\\/?*[\]:]/g,"").slice(0,31).trim()||"Empleado"; }
@@ -1375,6 +1376,27 @@ function AppMain({ session }) {
     .filter(r=>(!recF.emp||r.nombre.toLowerCase().includes(recF.emp.toLowerCase())||String(r.empNo).includes(recF.emp))&&(!recF.desde||r.fecha>=recF.desde)&&(!recF.hasta||r.fecha<=recF.hasta))
     .sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.empNo-b.empNo);
 
+  // Si el filtro deja UN solo empleado, se completan los días sin registro
+  // (feriados, findes, faltas) para ver el mes corrido. Con varios empleados
+  // no se rellena para no llenar la tabla de filas vacías.
+  const empsEnFiltro = [...new Set(filteredRecs.map(r=>r.empNo))];
+  const unicoEmp = empsEnFiltro.length===1 ? empsEnFiltro[0] : null;
+  const recsConHuecos = (()=>{
+    if(!unicoEmp || !filteredRecs.length) return filteredRecs;
+    const porFecha = {};
+    for(const r of filteredRecs)(porFecha[r.fecha] ||= []).push(r);
+    const out = [];
+    const d0 = new Date(filteredRecs[0].fecha+"T12:00:00");
+    const d1 = new Date(filteredRecs[filteredRecs.length-1].fecha+"T12:00:00");
+    for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)){
+      const f = d.toISOString().slice(0,10);
+      if(porFecha[f]) out.push(...porFecha[f]);
+      else out.push({id:`hueco_${unicoEmp}_${f}`, empNo:unicoEmp,
+        nombre:filteredRecs[0].nombre, fecha:f, entrada:null, salida:null, _hueco:true});
+    }
+    return out;
+  })();
+
   const empSummary=empList.map(emp=>{
     const recs=allRecs.filter(r=>r.empNo===emp.empNo);
     const calcs=recs.map(r=>{
@@ -1579,6 +1601,7 @@ function AppMain({ session }) {
                 </label>
                 {(recF.desde||recF.hasta)&&<button onClick={()=>setRecF(p=>({...p,desde:"",hasta:""}))} style={S.cancelBtn}>Limpiar fechas</button>}
                 <span style={{color:COL.textFaint,fontSize:12}}>{filteredRecs.length} registros</span>
+                {unicoEmp&&<span style={{fontSize:11,color:COL.accent,background:COL.accentBg,borderRadius:20,padding:"3px 10px"}}>Mostrando días sin marca</span>}
               </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <select value={exportMes} onChange={e=>setExportMes(e.target.value)}
@@ -1685,9 +1708,26 @@ function AppMain({ session }) {
 
             <div style={S.tblWrap}>
               <table style={S.table}>
-                <THead cols={["N°","Nombre","Tipo","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana","Obs.",""]}/>
+                <THead cols={["N°","Nombre","Tipo","Fecha","Día","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana","Obs.",""]}/>
                 <tbody>
-                  {filteredRecs.slice(0,300).map((r,i)=>{
+                  {recsConHuecos.slice(0,300).map((r,i)=>{
+                    // Día sin registro (solo aparece al filtrar por un empleado)
+                    if(r._hueco){
+                      const dh = new Date(r.fecha+"T12:00:00");
+                      const findeH = dh.getDay()===0||dh.getDay()===6;
+                      return(
+                        <tr key={r.id} style={{background:findeH?"#fdf9f3":"#fafbfc"}}>
+                          <td style={{...S.td,fontFamily:MONO,fontSize:12,color:"#c0c8d2"}}>{r.empNo}</td>
+                          <td style={{...S.td,textAlign:"left",color:"#c0c8d2"}}>{cap(r.nombre)}</td>
+                          <td style={S.td}></td>
+                          <td style={{...S.td,fontFamily:MONO,color:"#c0c8d2",fontSize:12}}>{r.fecha}</td>
+                          <td style={{...S.td,fontSize:12,color:findeH?"#d1a054":"#c0c8d2"}}>{DIAS_CORTO_TBL[dh.getDay()]}</td>
+                          <td colSpan={8} style={{...S.td,color:findeH?"#d1a054":"#c0c8d2",fontSize:11,fontStyle:"italic"}}>
+                            {findeH?"Fin de semana — sin marca":"Sin registro"}
+                          </td>
+                        </tr>
+                      );
+                    }
                     // Merge manual overrides
                     const manEnt = r.manual ? r.entrada  : (editingCell?.id===r.id&&editingCell?.field==="entrada" ? null : null);
                     const actualEntrada = r.manual ? r.entrada  : (manualSalidas[r.id+"_ent"] || r.entrada);
@@ -1746,6 +1786,9 @@ function AppMain({ session }) {
                           {employees[r.empNo]&&<TipoBadge tipo={employees[r.empNo].tipo||"operario"} small/>}
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:COL.textFaint,fontSize:12}}>{r.fecha}</td>
+                        <td style={{...S.td,fontSize:12,color:(()=>{const g=new Date(r.fecha+"T12:00:00").getDay();return g===0||g===6?"#b45309":COL.textSub;})()}}>
+                          {DIAS_CORTO_TBL[new Date(r.fecha+"T12:00:00").getDay()]}
+                        </td>
                         <TimeCell field="entrada" value={rr.entrada} color="#276749"/>
                         <TimeCell field="salida"  value={rr.salida}  color="#1e5fa8"/>
                         <td style={{...S.td,fontFamily:MONO,color:rr.soloEntrada?"#c0c8d2":c.trabajado!=null?(c.trabajado>=c.jornada?"#276749":"#b45309"):COL.textFaint}}>
@@ -1823,7 +1866,7 @@ function AppMain({ session }) {
               </table>
               {filteredRecs.length===0&&<div style={{padding:"36px",textAlign:"center",color:COL.textFaint,fontSize:13}}>Sin registros. Importá un archivo primero o agregá uno manual.</div>}
             </div>
-            {filteredRecs.length>300&&<p style={{color:COL.textFaint,fontSize:12,marginTop:8}}>Mostrando 300 de {filteredRecs.length} — usá los filtros para acotar.</p>}
+            {recsConHuecos.length>300&&<p style={{color:COL.textFaint,fontSize:12,marginTop:8}}>Mostrando 300 de {recsConHuecos.length} filas — usá los filtros para acotar.</p>}
           </div>
         )}
 
