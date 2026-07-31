@@ -545,6 +545,66 @@ function exportXLSX(rows, headers, sheetName, fileName) {
   XLSX.writeFile(wb, fileName);
 }
 
+const DIAS_SEMANA = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+
+const AUSENCIA_LABEL = {
+  aus_just:   "Ausencia justificada",
+  aus_injust: "Ausencia injustificada",
+  deuda_hs:   "Salida anticipada",
+};
+
+function sheetNameSafe(s) {
+  return s.replace(/[\\/?*[\]:]/g, "").slice(0, 31).trim() || "Empleado";
+}
+
+function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays) {
+  if (!recs.length) { alert("No hay registros para exportar con los filtros actuales."); return; }
+  const HEADERS = ["Día","Fecha","N°","Empleado","Tipo","Entrada","Salida",
+    "En jornada","Hs. extra","Demora","Sal. temprana","A recuperar","Ausencia","Observación"];
+  const porEmp = {};
+  for (const r of recs) (porEmp[r.empNo] ||= []).push(r);
+  const wb = XLSX.utils.book_new();
+  const usados = new Set();
+  const empNos = Object.keys(porEmp).map(Number).sort((a,b)=>a-b);
+  for (const empNo of empNos) {
+    const emp  = employees[empNo];
+    const rows = porEmp[empNo].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+    const aoa = [HEADERS];
+    for (const r of rows) {
+      const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
+      const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
+      const rr = {...r, entrada, salida};
+      const c  = calcRecord(rr, emp, specialDays);
+      const soloEntrada = !salida && !entrada;
+      aoa.push([
+        DIAS_SEMANA[new Date(r.fecha+"T12:00:00").getDay()],
+        r.fecha, r.empNo, cap(r.nombre),
+        emp ? cap(emp.tipo || "operario") : "",
+        entrada || "", salida || "",
+        soloEntrada ? "" : (c.trabajado != null ? minsToDisplay(c.trabajado) : ""),
+        c.extra != null ? `+${minsToDisplay(c.extra)}` : "",
+        c.demora > 0 ? minsToDisplay(c.demora) : "",
+        c.salTemprana > 0 ? minsToDisplay(c.salTemprana) : "",
+        r.recuperar && r.recuperarMin > 0 ? minsToDisplay(r.recuperarMin) : "",
+        AUSENCIA_LABEL[r.ausencia] || (r.manual ? "Registro manual" : ""),
+        r.observacion || "",
+      ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"] = HEADERS.map((h,i)=>{
+      const maxLen = Math.max(h.length, ...aoa.slice(1).map(row=>String(row[i] ?? "").length));
+      return { wch: Math.min(Math.max(maxLen+2, 8), 40) };
+    });
+    let name = sheetNameSafe(`${empNo} ${cap(rows[0].nombre)}`);
+    let base = name, n = 2;
+    while (usados.has(name)) name = sheetNameSafe(`${base.slice(0,28)}_${n++}`);
+    usados.add(name);
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  const hoy = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `registros_asistencia_${hoy}.xlsx`);
+}
+
 /* ─── Supabase ───────────────────────────────────────────────────────────── */
 const SB_URL = import.meta.env.VITE_SUPABASE_URL;
 const SB_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
@@ -1403,10 +1463,17 @@ function AppMain({ session }) {
                 {(recF.desde||recF.hasta)&&<button onClick={()=>setRecF(p=>({...p,desde:"",hasta:""}))} style={S.cancelBtn}>Limpiar fechas</button>}
                 <span style={{color:COL.textFaint,fontSize:12}}>{filteredRecs.length} registros</span>
               </div>
-              <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.desde||"",entrada:"",salida:"",ausencia:"",observacion:"",recuperarMin:""});}}
-                style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:15,lineHeight:1}}>+</span> Agregar registro
-              </button>
+                <div style={{display:"flex",gap:8}}>
+                <button
+                  onClick={()=>exportRegistrosPorEmpleado(filteredRecs, employees, manualSalidas, specialDays)}
+                  style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                </button>
+                <button onClick={()=>{setAddingRec(true);setNewRec({empNo:"",fecha:recF.desde||"",entrada:"",salida:"",ausencia:"",observacion:"",recuperarMin:""});}}
+                  style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:15,lineHeight:1}}>+</span> Agregar registro
+                </button>
+              </div>
             </div>
 
             {/* ── Agregar registro manual form ── */}
