@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
+import XLSXS from "xlsx-js-style";
 import LoginScreen from "./LoginScreen";
 
 /* ─── Google Fonts injection ─────────────────────────────────────────────── */
@@ -545,64 +546,151 @@ function exportXLSX(rows, headers, sheetName, fileName) {
   XLSX.writeFile(wb, fileName);
 }
 
-const DIAS_SEMANA = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 
-const AUSENCIA_LABEL = {
-  aus_just:   "Ausencia justificada",
-  aus_injust: "Ausencia injustificada",
-  deuda_hs:   "Salida anticipada",
-};
-
-function sheetNameSafe(s) {
-  return s.replace(/[\\/?*[\]:]/g, "").slice(0, 31).trim() || "Empleado";
-}
-
-function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays) {
-  if (!recs.length) { alert("No hay registros para exportar con los filtros actuales."); return; }
-  const HEADERS = ["Día","Fecha","N°","Empleado","Tipo","Entrada","Salida",
-    "En jornada","Hs. extra","Demora","Sal. temprana","A recuperar","Ausencia","Observación"];
+const DIAS_SEMANA  = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const MESES_LARGO  = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
+const AUSENCIA_LABEL = { aus_just:"Ausencia justificada", aus_injust:"Ausencia injustificada", deuda_hs:"Salida anticipada" };
+function sheetNameSafe(s){ return s.replace(/[\\/?*[\]:]/g,"").slice(0,31).trim()||"Empleado"; }
+ 
+function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays){
+  if(!recs.length){ alert("No hay registros para exportar con los filtros actuales."); return; }
+ 
+  /* estilos */
+  const BD  = s => ({top:{style:s,color:{rgb:"D4DBE4"}},bottom:{style:s,color:{rgb:"D4DBE4"}},left:{style:s,color:{rgb:"D4DBE4"}},right:{style:s,color:{rgb:"D4DBE4"}}});
+  const ST = {
+    titulo:  {font:{name:"Calibri",bold:true,sz:14,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A3A6B"}},alignment:{horizontal:"center",vertical:"center"}},
+    subtit:  {font:{name:"Calibri",sz:11,color:{rgb:"DCE8F5"}},fill:{fgColor:{rgb:"1A3A6B"}},alignment:{horizontal:"center",vertical:"center"}},
+    meta:    {font:{name:"Calibri",sz:9,color:{rgb:"96A3B0"},italic:true},alignment:{horizontal:"center"}},
+    mes:     {font:{name:"Calibri",bold:true,sz:12,color:{rgb:"1A3A6B"}},fill:{fgColor:{rgb:"DCE8F5"}},alignment:{horizontal:"left",vertical:"center"}},
+    head:    {font:{name:"Calibri",bold:true,sz:10,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"3D6B9E"}},alignment:{horizontal:"center",vertical:"center"},border:BD("thin")},
+    celda:   {font:{name:"Calibri",sz:10},alignment:{horizontal:"center"},border:BD("thin")},
+    celdaIzq:{font:{name:"Calibri",sz:10},alignment:{horizontal:"left"},border:BD("thin")},
+    finde:   {font:{name:"Calibri",sz:10,color:{rgb:"B45309"}},fill:{fgColor:{rgb:"FDF6EC"}},alignment:{horizontal:"center"},border:BD("thin")},
+    extra:   {font:{name:"Calibri",sz:10,bold:true,color:{rgb:"276749"}},alignment:{horizontal:"center"},border:BD("thin")},
+    negat:   {font:{name:"Calibri",sz:10,color:{rgb:"C53030"}},alignment:{horizontal:"center"},border:BD("thin")},
+    total:   {font:{name:"Calibri",bold:true,sz:10,color:{rgb:"1A3A6B"}},fill:{fgColor:{rgb:"EDF2F9"}},alignment:{horizontal:"center"},border:BD("thin")},
+    totalIzq:{font:{name:"Calibri",bold:true,sz:10,color:{rgb:"1A3A6B"}},fill:{fgColor:{rgb:"EDF2F9"}},alignment:{horizontal:"left"},border:BD("thin")},
+    gtotal:  {font:{name:"Calibri",bold:true,sz:11,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A3A6B"}},alignment:{horizontal:"center"},border:BD("thin")},
+    gtotalIzq:{font:{name:"Calibri",bold:true,sz:11,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A3A6B"}},alignment:{horizontal:"left"},border:BD("thin")},
+  };
+  const HHMM = "[h]:mm";        // formato sumable (39:45 se ve como 39:45)
+  const hora = min => ({v:min/1440, t:"n", z:"hh:mm"});           // hora del día
+  const dur  = min => ({v:min/1440, t:"n", z:HHMM});              // duración sumable
+  const txt  = (v,s) => ({v:v??"", t:"s", s});
+ 
+  const HEADERS = ["Día","Fecha","Entrada","Salida","En jornada","Hs. extra","Demora","Sal. temprana","A recuperar","Ausencia","Observación"];
+  const NCOLS = HEADERS.length;
+ 
   const porEmp = {};
-  for (const r of recs) (porEmp[r.empNo] ||= []).push(r);
-  const wb = XLSX.utils.book_new();
+  for(const r of recs)(porEmp[r.empNo] ||= []).push(r);
+ 
+  const wb = XLSXS.utils.book_new();
   const usados = new Set();
   const empNos = Object.keys(porEmp).map(Number).sort((a,b)=>a-b);
-  for (const empNo of empNos) {
+ 
+  for(const empNo of empNos){
     const emp  = employees[empNo];
     const rows = porEmp[empNo].sort((a,b)=>a.fecha.localeCompare(b.fecha));
-    const aoa = [HEADERS];
-    for (const r of rows) {
-      const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
-      const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
-      const rr = {...r, entrada, salida};
-      const c  = calcRecord(rr, emp, specialDays);
-      const soloEntrada = !salida && !entrada;
-      aoa.push([
-        DIAS_SEMANA[new Date(r.fecha+"T12:00:00").getDay()],
-        r.fecha, r.empNo, cap(r.nombre),
-        emp ? cap(emp.tipo || "operario") : "",
-        entrada || "", salida || "",
-        soloEntrada ? "" : (c.trabajado != null ? minsToDisplay(c.trabajado) : ""),
-        c.extra != null ? `+${minsToDisplay(c.extra)}` : "",
-        c.demora > 0 ? minsToDisplay(c.demora) : "",
-        c.salTemprana > 0 ? minsToDisplay(c.salTemprana) : "",
-        r.recuperar && r.recuperarMin > 0 ? minsToDisplay(r.recuperarMin) : "",
-        AUSENCIA_LABEL[r.ausencia] || (r.manual ? "Registro manual" : ""),
-        r.observacion || "",
+ 
+    const ws = {};
+    const merges = [];
+    let R = 0;
+    const put = (r,c,cell)=>{ ws[XLSXS.utils.encode_cell({r,c})] = cell; };
+    const fila = (cells)=>{ cells.forEach((cell,c)=>put(R,c,cell)); R++; };
+    const filaMerge = (cell,alto)=>{ merges.push({s:{r:R,c:0},e:{r:R,c:NCOLS-1}});
+      put(R,0,cell); for(let c=1;c<NCOLS;c++) put(R,c,{v:"",t:"s",s:cell.s}); R++; };
+ 
+    /* ── Encabezado de la hoja ── */
+    filaMerge({v:"PYG S.R.L. — REGISTRO DE ASISTENCIA", t:"s", s:ST.titulo});
+    filaMerge({v:`N° ${empNo} · ${cap(rows[0].nombre)} — ${cap(emp?.tipo||"operario")} · Horario ref. ${emp?.entrada||"06:00"} a ${emp?.salida||"16:30"}`, t:"s", s:ST.subtit});
+    filaMerge({v:`Período: ${rows[0].fecha} a ${rows[rows.length-1].fecha} · Generado el ${new Date().toLocaleDateString("es-AR")}`, t:"s", s:ST.meta});
+    R++; // fila en blanco
+ 
+    /* ── Agrupar por mes ── */
+    const porMes = {};
+    for(const r of rows)(porMes[r.fecha.slice(0,7)] ||= []).push(r);
+ 
+    const gran = {dias:0, jornada:0, extra:0, demora:0, salTemp:0};
+ 
+    for(const mesKey of Object.keys(porMes).sort()){
+      const mesRows = porMes[mesKey];
+      const [y,m] = mesKey.split("-");
+      filaMerge({v:`${MESES_LARGO[+m-1]} ${y}`, t:"s", s:ST.mes});
+      fila(HEADERS.map(h=>({v:h,t:"s",s:ST.head})));
+ 
+      const sub = {dias:0, jornada:0, extra:0, demora:0, salTemp:0};
+ 
+      for(const r of mesRows){
+        const entrada = r.manual ? r.entrada : (manualSalidas[r.id+"_ent"] || r.entrada);
+        const salida  = r.manual ? r.salida  : (manualSalidas[r.id]        || r.salida);
+        const c = calcRecord({...r, entrada, salida}, emp, specialDays);
+        const d = new Date(r.fecha+"T12:00:00");
+        const esFinde = d.getDay()===0||d.getDay()===6;
+        const base = esFinde ? ST.finde : ST.celda;
+        const baseIzq = esFinde ? {...ST.finde,alignment:{horizontal:"left"}} : ST.celdaIzq;
+ 
+        if(c.trabajado!=null){ sub.dias++; sub.jornada+=c.trabajado; }
+        if(c.extra)        sub.extra   += c.extra;
+        if(c.demora)       sub.demora  += c.demora;
+        if(c.salTemprana)  sub.salTemp += c.salTemprana;
+ 
+        fila([
+          txt(DIAS_SEMANA[d.getDay()], baseIzq),
+          {v:d, t:"d", z:"dd/mm/yyyy", s:base},
+          parseTimeVal(entrada)!=null ? {...hora(parseTimeVal(entrada)), s:base} : txt("", base),
+          parseTimeVal(salida) !=null ? {...hora(parseTimeVal(salida)),  s:base} : txt("", base),
+          c.trabajado!=null ? {...dur(c.trabajado), s:base} : txt("", base),
+          c.extra           ? {...dur(c.extra),     s:esFinde?ST.finde:ST.extra} : txt("", base),
+          c.demora          ? {...dur(c.demora),    s:ST.negat} : txt("", base),
+          c.salTemprana     ? {...dur(c.salTemprana),s:ST.negat} : txt("", base),
+          r.recuperar&&r.recuperarMin>0 ? {...dur(r.recuperarMin), s:base} : txt("", base),
+          txt(AUSENCIA_LABEL[r.ausencia] || (r.manual&&!r.ausencia?"Registro manual":""), base),
+          txt(r.observacion||"", baseIzq),
+        ]);
+      }
+ 
+      gran.dias+=sub.dias; gran.jornada+=sub.jornada; gran.extra+=sub.extra;
+      gran.demora+=sub.demora; gran.salTemp+=sub.salTemp;
+ 
+      fila([
+        txt(`Total ${MESES_LARGO[+m-1].toLowerCase()}`, ST.totalIzq),
+        txt(`${sub.dias} días`, ST.total),
+        txt("", ST.total), txt("", ST.total),
+        {...dur(sub.jornada), s:ST.total},
+        sub.extra   ? {...dur(sub.extra),   s:ST.total} : txt("", ST.total),
+        sub.demora  ? {...dur(sub.demora),  s:ST.total} : txt("", ST.total),
+        sub.salTemp ? {...dur(sub.salTemp), s:ST.total} : txt("", ST.total),
+        txt("", ST.total), txt("", ST.total), txt("", ST.total),
       ]);
+      R++; // fila en blanco entre meses
     }
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = HEADERS.map((h,i)=>{
-      const maxLen = Math.max(h.length, ...aoa.slice(1).map(row=>String(row[i] ?? "").length));
-      return { wch: Math.min(Math.max(maxLen+2, 8), 40) };
-    });
+ 
+    /* ── Total general ── */
+    fila([
+      txt("TOTAL GENERAL", ST.gtotalIzq),
+      txt(`${gran.dias} días`, ST.gtotal),
+      txt("", ST.gtotal), txt("", ST.gtotal),
+      {...dur(gran.jornada), s:ST.gtotal},
+      gran.extra   ? {...dur(gran.extra),   s:ST.gtotal} : txt("", ST.gtotal),
+      gran.demora  ? {...dur(gran.demora),  s:ST.gtotal} : txt("", ST.gtotal),
+      gran.salTemp ? {...dur(gran.salTemp), s:ST.gtotal} : txt("", ST.gtotal),
+      txt("", ST.gtotal), txt("", ST.gtotal), txt("", ST.gtotal),
+    ]);
+ 
+    ws["!ref"]    = XLSXS.utils.encode_range({s:{r:0,c:0},e:{r:R-1,c:NCOLS-1}});
+    ws["!merges"] = merges;
+    ws["!cols"]   = [{wch:11},{wch:11},{wch:9},{wch:9},{wch:11},{wch:10},{wch:9},{wch:13},{wch:12},{wch:20},{wch:28}];
+    ws["!rows"]   = [{hpt:24},{hpt:18},{hpt:14}];
+ 
     let name = sheetNameSafe(`${empNo} ${cap(rows[0].nombre)}`);
     let base = name, n = 2;
-    while (usados.has(name)) name = sheetNameSafe(`${base.slice(0,28)}_${n++}`);
+    while(usados.has(name)) name = sheetNameSafe(`${base.slice(0,28)}_${n++}`);
     usados.add(name);
-    XLSX.utils.book_append_sheet(wb, ws, name);
+    XLSXS.utils.book_append_sheet(wb, ws, name);
   }
+ 
   const hoy = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `registros_asistencia_${hoy}.xlsx`);
+  XLSXS.writeFile(wb, `registros_asistencia_${hoy}.xlsx`);
 }
 
 /* ─── Supabase ───────────────────────────────────────────────────────────── */
