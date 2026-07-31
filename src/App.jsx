@@ -1715,15 +1715,30 @@ function AppMain({ session }) {
                     if(r._hueco){
                       const dh = new Date(r.fecha+"T12:00:00");
                       const findeH = dh.getDay()===0||dh.getDay()===6;
+                      const cargarHueco = ()=>{
+                        setNewRec({empNo:String(r.empNo), fecha:r.fecha, entrada:"", salida:"",
+                          ausencia:"aus_just", observacion:"", recuperarMin:""});
+                        setAddingRec(true);
+                        setTimeout(()=>window.scrollTo({top:0,behavior:"smooth"}),50);
+                      };
                       return(
-                        <tr key={r.id} style={{background:findeH?"#fdf9f3":"#fafbfc"}}>
+                        <tr key={r.id} onDoubleClick={cargarHueco}
+                          title="Doble click para cargar una ausencia en este día"
+                          style={{background:findeH?"#fdf9f3":"#fafbfc",cursor:"pointer"}}>
                           <td style={{...S.td,fontFamily:MONO,fontSize:12,color:"#c0c8d2"}}>{r.empNo}</td>
                           <td style={{...S.td,textAlign:"left",color:"#c0c8d2"}}>{cap(r.nombre)}</td>
                           <td style={S.td}></td>
                           <td style={{...S.td,fontFamily:MONO,color:"#c0c8d2",fontSize:12}}>{r.fecha}</td>
                           <td style={{...S.td,fontSize:12,color:findeH?"#d1a054":"#c0c8d2"}}>{DIAS_CORTO_TBL[dh.getDay()]}</td>
-                          <td colSpan={8} style={{...S.td,color:findeH?"#d1a054":"#c0c8d2",fontSize:11,fontStyle:"italic"}}>
+                          <td colSpan={7} style={{...S.td,color:findeH?"#d1a054":"#c0c8d2",fontSize:11,fontStyle:"italic"}}>
                             {findeH?"Fin de semana — sin marca":"Sin registro"}
+                            <span style={{marginLeft:10,fontStyle:"normal",fontSize:10,color:COL.textFaint}}>
+                              doble click para cargar
+                            </span>
+                          </td>
+                          <td style={{...S.td,padding:"5px 8px",width:28}}>
+                            <button onClick={cargarHueco} title="Cargar ausencia / registro en este día"
+                              style={{background:"none",border:"none",cursor:"pointer",color:COL.accent,fontSize:15,lineHeight:1,padding:2}}>+</button>
                           </td>
                         </tr>
                       );
