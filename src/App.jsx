@@ -359,7 +359,7 @@ function exportLiqPDF(d) {
   const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt, impExtrasReloj,
     importeExtras, importeExtraManual, horasExtraManualDisplay, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
-    ausencias, descAusencias,
+    ausencias, descAusencias, premioIndividual, premioArea, premioPresentismo,
     descDemoras, fraccionesSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
     totalACobrar, diasTrabajados, nombreDisplay, fmt } = d;
 
@@ -446,6 +446,9 @@ function exportLiqPDF(d) {
           ${importeFinde>0 ?row("Días finde/especiales",diasFinde||"—",fmt(valorDiaFinde),fmt(importeFinde),"detail","",true):""}
           ${importeFeriados>0 ?row("Feriados",feriados||"—",fmt(valorDia),fmt(importeFeriados),"detail","",true):row("Feriados","—",fmt(valorDia),"—","muted","",true)}
           ${row("SAC","—","—",sac>0?fmt(sac):"—",sac>0?"detail":"muted","",true)}
+          ${premioIndividual>0?row("Premio individual","—","—",fmt(premioIndividual),"detail","",true):""}
+          ${premioArea>0?row("Premio área","—","—",fmt(premioArea),"detail","",true):""}
+          ${premioPresentismo>0?row("Premio presentismo","—","—",fmt(premioPresentismo),"detail","",true):""}
           ${importeVacaciones>0 ?row("Vacaciones",vacaciones||"—",fmt(valorDia),fmt(importeVacaciones),"detail","",true):row("Vacaciones","—",fmt(valorDia),"—","muted","",true)}
           ${row("Subtotal adicionales","","",fmt(totalAdicionales),"sub")}
           ${row("SUELDO + ADICIONALES","","",fmt(subtotal),"total-line","#1a3a6b")}
@@ -1354,6 +1357,7 @@ function AppMain({ session }) {
       "reciboA",                                   // forma de pago del mes
         
       "sac", "vacaciones", "feriados",             // adicionales manuales
+      "premioIndividual", "premioArea", "premioPresentismo", // premios del mes
       "ausencias",                                 // días de falta descontados
       "findeSel",                                  // selección de findes
     ];
@@ -3010,7 +3014,10 @@ function AppMain({ session }) {
               const importeFeriados  =  ovr(p.impFeriadosManual)   ?? valorDia      * feriados;
               const importeVacacion  =  ovr(p.impVacacionesManual) ?? valorDia      * vacaciones;
               const importeFinde     =  ovr(p.impFindeManual)      ?? valorDiaFinde * diasFinde;
-              const totalAdicionales = importeExtras + importeFeriados + importeVacacion + importeFinde; // SAC va en su propia columna
+              const premioIndividual  = parseFloat(p.premioIndividual  || 0);
+              const premioArea        = parseFloat(p.premioArea        || 0);
+              const premioPresentismo = parseFloat(p.premioPresentismo || 0);
+              const totalAdicionales = importeExtras + importeFeriados + importeVacacion + importeFinde + premioIndividual + premioArea + premioPresentismo; // SAC va en su propia columna
 
               const descDemorasCalc = (valorHora / 4) * fraccionesDem;
               const descSalTempCalc = (valorHora / 4) * fraccionesSt;
@@ -3333,7 +3340,11 @@ function AppMain({ session }) {
           const importeVacaciones= impVacacionesManual !== null ? impVacacionesManual : impVacacionesCalc;
           const importeFinde     = impFindeManual      !== null ? impFindeManual      : impFindeCalc;
           const importeExtras    = impExtrasReloj + importeExtraManual;
-          const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde;
+          // Premios (importes directos)
+          const premioIndividual  = parseFloat(p.premioIndividual  || 0);
+          const premioArea        = parseFloat(p.premioArea        || 0);
+          const premioPresentismo = parseFloat(p.premioPresentismo || 0);
+          const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde + premioIndividual + premioArea + premioPresentismo;
           const totalDescuentos  = descDemoras + descSalTemp + descAusencias;
           const subtotal         = importeSueldo + totalAdicionales;
           const totalACobrar     = subtotal - totalDescuentos - adelanto;
@@ -3397,7 +3408,7 @@ function AppMain({ session }) {
                   Nuevo período
                 </button>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,ausencias,descAusencias,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,premioIndividual,premioArea,premioPresentismo,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,ausencias,descAusencias,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -3457,6 +3468,9 @@ function AppMain({ session }) {
                     <div style={{background:COL.surface,border:`1px solid ${COL.border}`,borderRadius:12,padding:"18px 20px",marginBottom:16}}>
                       <div style={{fontSize:11,color:COL.textFaint,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:14}}>Adicionales manuales</div>
                       <FieldInput label="SAC"                      value={p.sac||""}        onChange={v=>setP("sac",v)}        note="importe directo" />
+                      <FieldInput label="Premio individual"        value={p.premioIndividual||""}  onChange={v=>setP("premioIndividual",v)}  note="importe directo" />
+                      <FieldInput label="Premio área"              value={p.premioArea||""}        onChange={v=>setP("premioArea",v)}        note="importe directo" />
+                      <FieldInput label="Premio presentismo"       value={p.premioPresentismo||""} onChange={v=>setP("premioPresentismo",v)} note="importe directo" />
                       <FieldInput label="Vacaciones (días)"        value={p.vacaciones||""} onChange={v=>setP("vacaciones",v)} prefix="" note="× valor día" />
                       <FieldInput label="Feriados (días)"          value={p.feriados||""}   onChange={v=>setP("feriados",v)}   prefix="" note="× valor día" />
 
@@ -3877,6 +3891,9 @@ function AppMain({ session }) {
                           <LiqRow label={`Días finde/especiales${impFindeManual!==null?" ✎":""}`} indent cantidad={diasFinde||"—"} valor={impFindeManual!==null?"—":(diasFinde?fmt(valorDiaFinde):"—")} importe={importeFinde?fmt(importeFinde):"—"} />
                           <LiqRow label={`Feriados${impFeriadosManual!==null?" ✎":""}`}          indent cantidad={feriados||"—"}  valor={impFeriadosManual!==null?"—":fmt(valorDia)}     importe={importeFeriados?fmt(importeFeriados):"—"} />
                           <LiqRow label="SAC"               indent cantidad=""              valor=""                  importe={sac?fmt(sac):"—"} />
+                          <LiqRow label="Premio individual"  indent cantidad="" valor="" importe={premioIndividual?fmt(premioIndividual):"—"} />
+                          <LiqRow label="Premio área"        indent cantidad="" valor="" importe={premioArea?fmt(premioArea):"—"} />
+                          <LiqRow label="Premio presentismo" indent cantidad="" valor="" importe={premioPresentismo?fmt(premioPresentismo):"—"} />
                           <LiqRow label={`Vacaciones${impVacacionesManual!==null?" ✎":""}`}        indent cantidad={vacaciones||"—"} valor={impVacacionesManual!==null?"—":fmt(valorDia)}   importe={importeVacaciones?fmt(importeVacaciones):"—"} />
                           <LiqRow label="Subtotal adicionales" cantidad="" valor="" importe={fmt(totalAdicionales)} bold separator />
 
