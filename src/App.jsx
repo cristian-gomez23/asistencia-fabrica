@@ -200,7 +200,10 @@ function calcRecord(rec, empCfg, specialDays) {
   const esDomingo  = diaSemana === 0;
   const esFeriado  = dayType?.tipo === "feriado";
 
-  if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra:null, demora:null, salTemprana:null };
+  // extraCorr = horas extra editadas a mano (minutos). null = cálculo automático.
+  const extraManual = rec.extraCorr != null ? (rec.extraCorr > 0 ? rec.extraCorr : null) : undefined;
+
+  if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra: extraManual !== undefined ? extraManual : null, demora:null, salTemprana:null };
 
   const entMin = parseTimeVal(rec.entrada);
   const salMin = parseTimeVal(rec.salida);
@@ -210,7 +213,7 @@ function calcRecord(rec, empCfg, specialDays) {
   // computarles demora ni salida temprana (no tienen horario que cumplir).
   if (!esOperario && (esSabado || esDomingo || esFeriado)) {
     const total = Math.max(0, salMin - entMin);
-    return { trabajado:0, jornada:0, extra: total>0 ? total : null, demora:0, salTemprana:0 };
+    return { trabajado:0, jornada:0, extra: extraManual !== undefined ? extraManual : (total>0 ? total : null), demora:0, salTemprana:0 };
   }
 
   // Horario de referencia efectivo del día (feriado y sábado acortan la salida)
@@ -240,6 +243,7 @@ function calcRecord(rec, empCfg, specialDays) {
     const total         = adelanto + extension;
     if (total > 0) extra = total;
   }
+  if (extraManual !== undefined) extra = extraManual; // edición manual pisa el cálculo
   const demora      = Math.max(0, entMin - entRef);
   const salTemprana = Math.max(0, salRef - salMin);
   const entDentro   = Math.max(entMin, entRef);
@@ -908,6 +912,7 @@ function recToRow(r, periodo) {
     ausencia: r.ausencia || null,
     recuperar: r.recuperar || false,
     recuperar_min: r.recuperarMin || 0,
+    extra_corr: r.extraCorr ?? null,
   };
 }
 
@@ -920,6 +925,7 @@ function rowToRec(r) {
     ausencia: r.ausencia || null,
     recuperar: r.recuperar || false,
     recuperarMin: r.recuperar_min || 0,
+    extraCorr: r.extra_corr ?? null,
   };
 }
 
@@ -1826,7 +1832,28 @@ function AppMain({ session }) {
                           {rr.soloEntrada ? "—" : c.trabajado!=null ? minsToDisplay(c.trabajado) : "—"}
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:c.extra!=null?"#276749":"#c0c8d2",fontWeight:c.extra!=null?600:400}}>
-                          {c.extra!=null ? `+${minsToDisplay(c.extra)}` : "—"}
+                          {isEditing("extra")
+                            ? <input type="time" autoFocus
+                                defaultValue={minsToHHMM(r.extraCorr!=null?r.extraCorr:(c.extra||0))}
+                                onBlur={e=>{
+                                  const v=e.target.value;
+                                  // vacío = volver al cálculo automático; 00:00 = sin extra
+                                  const min=v ? (parseTimeVal(v)||0) : null;
+                                  const patch={extraCorr:min};
+                                  if(r.manual) setManualRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
+                                  else setRecords(p=>p.map(x=>x.id===r.id?{...x,...patch}:x));
+                                  sbUpdate("registros",r.id,{extra_corr:min},"id");
+                                  setEditingCell(null);
+                                }}
+                                onKeyDown={e=>{if(e.key==="Escape")setEditingCell(null);if(e.key==="Enter")e.target.blur();}}
+                                title="hh:mm de horas extra — vacío = volver al cálculo automático"
+                                style={{...S.inlineInput,fontSize:11,padding:"3px 6px",width:88}}/>
+                            : <span onClick={()=>setEditingCell({id:r.id,field:"extra"})}
+                                title={r.extraCorr!=null?"Hs. extra editadas a mano — click para modificar (dejar vacío = volver al automático)":"Click para editar hs. extra"}
+                                style={{cursor:"pointer",borderBottom:"1px dashed #c0c8d2",paddingBottom:1,display:"inline-flex",gap:5,alignItems:"center"}}>
+                                {c.extra!=null ? `+${minsToDisplay(c.extra)}` : "—"}
+                                {r.extraCorr!=null&&<span style={{fontSize:9,fontFamily:SANS,background:"#fde68a",color:"#92400e",borderRadius:4,padding:"1px 4px",fontWeight:600}}>man</span>}
+                              </span>}
                         </td>
                         <td style={{...S.td,fontFamily:MONO,color:c.demora>0?"#c53030":"#c0c8d2"}}>{c.demora>0?minsToDisplay(c.demora):"—"}</td>
                         <td style={{...S.td,fontFamily:MONO,color:c.salTemprana>0?"#b45309":"#c0c8d2"}}>
