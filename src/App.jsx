@@ -208,12 +208,22 @@ function calcRecord(rec, empCfg, specialDays) {
   const entMin = parseTimeVal(rec.entrada);
   const salMin = parseTimeVal(rec.salida);
 
-  // ── Administrativos: sábados, domingos y feriados NO son obligatorios ──
-  // Todo lo que trabajen esos días se paga como hora extra, y no corresponde
-  // computarles demora ni salida temprana (no tienen horario que cumplir).
-  if (!esOperario && (esSabado || esDomingo || esFeriado)) {
+  // ── Administrativos: sábados y domingos NO son obligatorios ──
+  // Todo lo que trabajen esos días se paga como hora extra.
+  if (!esOperario && (esSabado || esDomingo)) {
     const total = Math.max(0, salMin - entMin);
     return { trabajado:0, jornada:0, extra: extraManual !== undefined ? extraManual : (total>0 ? total : null), demora:0, salTemprana:0 };
+  }
+
+  // ── Administrativos en FERIADO: se computa la jornada normal (el feriado
+  // se paga aparte en Liquidación) y solo la diferencia por encima de la
+  // jornada de referencia va como hora extra. Sin demora ni salida temprana.
+  if (!esOperario && esFeriado) {
+    const total      = Math.max(0, salMin - entMin);
+    const jornadaRef = parseTimeVal(cfg.salida) - parseTimeVal(cfg.entrada);
+    let extra = total > jornadaRef ? total - jornadaRef : null;
+    if (extraManual !== undefined) extra = extraManual;
+    return { trabajado: Math.min(total, jornadaRef), jornada: jornadaRef, extra, demora:0, salTemprana:0 };
   }
 
   // Horario de referencia efectivo del día (feriado y sábado acortan la salida)
