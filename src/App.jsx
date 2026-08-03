@@ -2508,7 +2508,7 @@ function AppMain({ session }) {
             const b = parseFloat(basico) || 0;
             if (!b) return { valorDia:"", valorHora:"", valorDiaFinde:"", valorHoraExt:"" };
             const valorDia  = b / 22;
-            const valorHora = valorDia / 7;
+            const valorHora = valorDia / 8;
             return {
               valorDia:      valorDia.toFixed(2),
               valorHora:     valorHora.toFixed(2),
@@ -2830,7 +2830,7 @@ function AppMain({ session }) {
                             <tbody>
                               {[
                                 {label:"Valor a descontar por día de falta", field:"valorDia",      note:"sueldo / 22"},
-                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 7 · por hora"},
+                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 8 · por hora"},
                                 {label:"Feriados trabajados",                 field:"valorDia",      note:`sueldo / 22 · hasta las ${emp.salida||"16:30"} hs`},
                                 {label:"Sábados",                             field:"valorDiaFinde", note:"sueldo / 22 · 08 a 14 hs"},
                                 {label:"Horas extras",                        field:"valorHoraExt",  note:`hora × 1.5 · a partir de las ${emp.salida||"16:30"} hs`},
@@ -2949,7 +2949,7 @@ function AppMain({ session }) {
           const activeEmps = empList.filter(e=>e.activo!==false);
           const getP = (empNo) => liqParams[String(empNo)] || {};
 
-          const fmt$ = n => n ? `$${Math.round(Number(n)).toLocaleString("es-AR")}` : "—";
+          const fmt$ = n => n ? `$${Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}` : "—";
 
           const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
           const mesDesde = resumenMes ? `${resumenMes}-01` : null;
@@ -3329,8 +3329,8 @@ function AppMain({ session }) {
           const subtotal         = importeSueldo + totalAdicionales;
           const totalACobrar     = subtotal - totalDescuentos - adelanto;
 
-          const fmt = (n) => n === 0 ? "—" : `$${Math.round(n).toLocaleString("es-AR")}`;
-          const fmtN = (n) => n === 0 ? "—" : Math.round(n).toLocaleString("es-AR");
+          const fmt = (n) => n === 0 ? "—" : `$${Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+          const fmtN = (n) => n === 0 ? "—" : Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
           const LiqRow = ({label,cantidad,valor,importe,bold,color,indent,separator}) => (
             <>
