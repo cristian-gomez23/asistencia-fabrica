@@ -359,6 +359,7 @@ function exportLiqPDF(d) {
   const { selEmp, periodo, ingreso, desde, hasta, importeSueldo, diasFinde, valorDiaFinde, importeFinde, horasExtra, horasExtraDisplay, valorHoraExt, impExtrasReloj,
     importeExtras, importeExtraManual, horasExtraManualDisplay, feriados, valorDia, importeFeriados, sac, vacaciones,
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
+    ausencias, descAusencias,
     descDemoras, fraccionesSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
     totalACobrar, diasTrabajados, nombreDisplay, fmt } = d;
 
@@ -451,6 +452,7 @@ function exportLiqPDF(d) {
           ${row("DESCUENTOS","","","","section")}
           ${descDemoras>0?row("Llegadas tarde (fracc. de 15 min)",fraccionesDemora,`${fmt(valorHora)}/4`,fmt(descDemoras),"detail","#c53030",true):row("Llegadas tarde (fracc. de 15 min)","—","—","—","muted","",true)}
           ${descSalTemp>0?row("Retiros anticipados (fracc. de 15 min)",fraccionesSalTemp,`${fmt(valorHora)}/4`,fmt(descSalTemp),"detail","#c53030",true):row("Retiros anticipados (fracc. de 15 min)","—","—","—","muted","",true)}
+          ${descAusencias>0?row("Ausencias (días de falta)",ausencias,fmt(valorDia),fmt(descAusencias),"detail","#c53030",true):row("Ausencias (días de falta)","—","—","—","muted","",true)}
           ${row("Total descuentos","","",totalDescuentos>0?fmt(totalDescuentos):"—","sub",totalDescuentos>0?"#c53030":"")}
           ${(adelantos||[]).filter(a=>parseFloat(a.monto)>0).length
             ? row("ADELANTOS","","","","section","#b45309")
@@ -1352,6 +1354,7 @@ function AppMain({ session }) {
       "reciboA",                                   // forma de pago del mes
         
       "sac", "vacaciones", "feriados",             // adicionales manuales
+      "ausencias",                                 // días de falta descontados
       "findeSel",                                  // selección de findes
     ];
     setLiqParams(prev => {
@@ -3017,7 +3020,9 @@ function AppMain({ session }) {
                 ? parseFloat(p.descSalTempManual) : null;
               const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
               const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
-              const totalDesc        = descDemoras + descSalTemp;
+              const ausencias     = parseFloat(p.ausencias || 0);
+              const descAusencias = valorDia * ausencias;
+              const totalDesc        = descDemoras + descSalTemp + descAusencias;
               const subtotal         = sueldoBasico + totalAdicionales + sac - totalDesc - adelanto;
               const reciboA          = parseFloat(p.reciboA || 0);
               const enMano           = subtotal - reciboA;      
@@ -3302,6 +3307,10 @@ function AppMain({ session }) {
           const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
           const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
 
+          // Ausencias (días de falta) — se descuenta valor día × cantidad de días
+          const ausencias     = parseFloat(p.ausencias || 0);
+          const descAusencias = valorDia * ausencias;
+
           // Cantidades a mostrar: si el descuento se borró (importe 0), no mostrar unidades
           const fraccionesDemoraDisp = descDemoras > 0 ? fraccionesDemora  : "—";
           const fraccionesSalTempDisp= descSalTemp > 0 ? fraccionesSalTemp : "—";
@@ -3325,7 +3334,7 @@ function AppMain({ session }) {
           const importeFinde     = impFindeManual      !== null ? impFindeManual      : impFindeCalc;
           const importeExtras    = impExtrasReloj + importeExtraManual;
           const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde;
-          const totalDescuentos  = descDemoras + descSalTemp;
+          const totalDescuentos  = descDemoras + descSalTemp + descAusencias;
           const subtotal         = importeSueldo + totalAdicionales;
           const totalACobrar     = subtotal - totalDescuentos - adelanto;
 
@@ -3388,7 +3397,7 @@ function AppMain({ session }) {
                   Nuevo período
                 </button>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,ausencias,descAusencias,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
@@ -3709,6 +3718,23 @@ function AppMain({ session }) {
                               style={{fontSize:10,color:COL.textFaint,background:"none",border:"none",cursor:"pointer"}}>↺</button>}
                           </div>
                         </div>
+                        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
+                            Ausencias (días)
+                            <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>× valor día</span>
+                          </label>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <input type="number" min="0" step="any"
+                              value={p.ausencias !== undefined ? p.ausencias : ""}
+                              onChange={e=>setP("ausencias", e.target.value)}
+                              placeholder="0"
+                              style={{...S.sInput,width:70,padding:"6px 10px",fontFamily:MONO,fontSize:13}}
+                            />
+                            <span style={{fontSize:12,fontFamily:MONO,color:descAusencias>0?"#c53030":COL.textFaint}}>
+                              {descAusencias>0?`−$${Number(descAusencias).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Forma de pago: Recibo A / en mano */}
@@ -3859,6 +3885,7 @@ function AppMain({ session }) {
                           <LiqRow label="DESCUENTOS" cantidad="" valor="" importe="" bold separator />
                           <LiqRow label={`Llegadas tarde${descDemorasManual!==null?" ✎":""}`} indent cantidad={fraccionesDemoraDisp} valor={descDemoras?`${fmt(valorHora)}/4`:"—"} importe={descDemoras?fmt(descDemoras):"—"} color={descDemoras?"#c53030":undefined} />
                           <LiqRow label={`Retiros anticipados${descSalTempManual!==null?" ✎":""}`} indent cantidad={fraccionesSalTempDisp} valor={descSalTemp?`${fmt(valorHora)}/4`:"—"} importe={descSalTemp?fmt(descSalTemp):"—"} color={descSalTemp?"#c53030":undefined} />
+                          <LiqRow label="Ausencias (días de falta)" indent cantidad={ausencias||"—"} valor={descAusencias?fmt(valorDia):"—"} importe={descAusencias?fmt(descAusencias):"—"} color={descAusencias?"#c53030":undefined} />
                           <LiqRow label="Total descuentos" cantidad="" valor="" importe={totalDescuentos?fmt(totalDescuentos):"—"} bold color="#c53030" separator />
 
                           <LiqRow label="Adelantos" cantidad="" valor="" importe="" bold color="#b45309" separator />
