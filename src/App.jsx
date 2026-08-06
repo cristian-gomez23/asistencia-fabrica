@@ -3054,7 +3054,6 @@ function AppMain({ session }) {
                 ingreso:   p.ingreso || emp.ingreso || "",
                 sueldoBasico,
                 totalAdicionales,
-                monotributo,
                 sac,
                 totalDesc,
                 adelanto,
@@ -3067,7 +3066,6 @@ function AppMain({ session }) {
 
           const totBasico     = filas.reduce((s,f)=>s+f.sueldoBasico,0);
           const totAdicional  = filas.reduce((s,f)=>s+f.totalAdicionales,0);
-          const totMonotributo= filas.reduce((s,f)=>s+f.monotributo,0);
           const totSac        = filas.reduce((s,f)=>s+f.sac,0);
           const totDesc       = filas.reduce((s,f)=>s+f.totalDesc,0);
           const totAdelanto   = filas.reduce((s,f)=>s+f.adelanto,0);
@@ -3092,7 +3090,7 @@ function AppMain({ session }) {
                   <button onClick={()=>{
                     const headers = [
                       ["empNo","N°"],["nombre","Empleado"],["area","Área"],["ingreso","Ingreso"],
-                      ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],["monotributo","Monotributo"],["sac","SAC"],
+                      ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],["sac","SAC"],
                       ["totalDesc","Desc. hs/días"],["adelanto","Adelantos"],["subtotal","Subtotal"],
                       ["reciboA","Recibo A"],["enMano","A pagar en mano"],
                     ];
@@ -3101,7 +3099,6 @@ function AppMain({ session }) {
                       ingreso:f.ingreso?new Date(f.ingreso+"T12:00:00").toLocaleDateString("es-AR"):"",
                       sueldoBasico:Math.round(f.sueldoBasico),
                       totalAdicionales:Math.round(f.totalAdicionales),
-                      monotributo:Math.round(f.monotributo),
                       sac:Math.round(f.sac),
                       totalDesc:Math.round(f.totalDesc),
                       adelanto:Math.round(f.adelanto),
@@ -3110,7 +3107,7 @@ function AppMain({ session }) {
                       enMano:Math.round(f.enMano),
                     }));
                     rows.push({empNo:"",nombre:`TOTAL (${filas.length})`,area:"",ingreso:"",
-                      sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),monotributo:Math.round(totMonotributo),sac:Math.round(totSac),
+                      sueldoBasico:Math.round(totBasico),totalAdicionales:Math.round(totAdicional),sac:Math.round(totSac),
                       totalDesc:Math.round(totDesc),adelanto:Math.round(totAdelanto),subtotal:Math.round(totSubtotal),
                       reciboA:Math.round(totReciboA),enMano:Math.round(totEnMano)});
                     const sufijo = resumenMes ? `_${resumenMes}` : "";
@@ -3165,7 +3162,6 @@ function AppMain({ session }) {
                         <th style={{...S.th,textAlign:"left"}}>Ingreso</th>
                         <th style={thR}>Sueldo básico</th>
                         <th style={thR}>Adicionales</th>
-                        <th style={thR}>Monotributo</th>
                         <th style={thR}>SAC</th>
                         <th style={{...thR,color:"#c53030"}}>Desc. hs/días</th>
                         <th style={{...thR,color:"#b45309"}}>Adelantos</th>
@@ -3190,7 +3186,6 @@ function AppMain({ session }) {
                           </td>
                           <td style={tdR()}>{fmt$(f.sueldoBasico)}</td>
                           <td style={tdR("#276749")}>{f.totalAdicionales>0?fmt$(f.totalAdicionales):"—"}</td>
-                          <td style={tdR("#276749")}>{f.monotributo>0?fmt$(f.monotributo):"—"}</td>
                           <td style={tdR()}>{f.sac>0?fmt$(f.sac):"—"}</td>
                           <td style={tdR("#c53030")}>{f.totalDesc>0?fmt$(f.totalDesc):"—"}</td>
                           <td style={tdR("#b45309")}>{f.adelanto>0?fmt$(f.adelanto):"—"}</td>
@@ -3207,7 +3202,6 @@ function AppMain({ session }) {
                         </td>
                         <td style={{...tdR(),fontWeight:700,fontSize:13}}>{fmt$(totBasico)}</td>
                         <td style={{...tdR("#276749"),fontWeight:700}}>{totAdicional>0?fmt$(totAdicional):"—"}</td>
-                        <td style={{...tdR("#276749"),fontWeight:700}}>{totMonotributo>0?fmt$(totMonotributo):"—"}</td>
                         <td style={{...tdR(),fontWeight:700}}>{totSac>0?fmt$(totSac):"—"}</td>
                         <td style={{...tdR("#c53030"),fontWeight:700}}>{totDesc>0?fmt$(totDesc):"—"}</td>
                         <td style={{...tdR("#b45309"),fontWeight:700}}>{totAdelanto>0?fmt$(totAdelanto):"—"}</td>
