@@ -1,6 +1,5 @@
 // Tests de la lógica pura de asistencia y liquidación.
-// Correr con:  node --test calculos.test.mjs
-// (requiere "type": "module" en package.json, que Vite ya trae)
+// Correr con:  node --test src/calculos.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -29,26 +28,30 @@ test("minsToHHMM / minsToDisplay", () => {
   assert.equal(minsToDisplay(null), "—");
 });
 
-/* ── Fracciones de demora (tolerancia 15 por día) ──────────────────── */
+/* ── Fracciones de demora — REGLA CONFIRMADA POR RRHH (ago-2026):
+      ≤15 por día se perdona; después, fracciones de 15 contadas desde
+      cero y el múltiplo exacto completa el bloque:
+      20 → 1 · 30 → 2 · 31 → 2 · 45 → 3 · 46 → 3.
+      Si estos tests fallan, ALGUIEN CAMBIÓ EL DESCUENTO: no tocar los
+      valores esperados sin confirmación explícita de RRHH. ─────────── */
 
-test("fraccionesDeUnDia: tolerancia y bloques de 15", () => {
+test("fraccionesDeUnDia: regla RRHH (30→2, 45→3)", () => {
   assert.equal(fraccionesDeUnDia(0), 0);
-  assert.equal(fraccionesDeUnDia(15), 0);  // dentro de la tolerancia
+  assert.equal(fraccionesDeUnDia(15), 0);   // dentro de la tolerancia
   assert.equal(fraccionesDeUnDia(16), 1);
+  assert.equal(fraccionesDeUnDia(20), 1);
   assert.equal(fraccionesDeUnDia(29), 1);
-  // OJO: en múltiplos exactos de 15 el código cuenta el bloque completo
-  // (30 → 2, 45 → 3). El comentario del código decía "16-30 = 1";
-  // estos tests documentan lo que el código HACE. Ver nota en el chat.
-  assert.equal(fraccionesDeUnDia(30), 2);
+  assert.equal(fraccionesDeUnDia(30), 2);   // múltiplo exacto completa bloque
   assert.equal(fraccionesDeUnDia(31), 2);
+  assert.equal(fraccionesDeUnDia(44), 2);
   assert.equal(fraccionesDeUnDia(45), 3);
+  assert.equal(fraccionesDeUnDia(46), 3);
 });
 
 test("fraccionesDemoraCalc: la tolerancia es POR DÍA", () => {
-  // Tres días con 10 min de demora = 0 fracciones (cada día se perdona);
-  // un solo día con 30 min = 2 fracciones.
   assert.equal(fraccionesDemoraCalc([{demora:10},{demora:10},{demora:10}]), 0);
   assert.equal(fraccionesDemoraCalc([{demora:30}]), 2);
+  assert.equal(fraccionesDemoraCalc([{demora:20},{demora:31}]), 3); // 1 + 2
 });
 
 /* ── Recuperación de horas ─────────────────────────────────────────── */
@@ -80,13 +83,13 @@ test("calcRecuperacion: un día con +7min no descuenta nada", () => {
 
 const OPERARIO = { entrada:"06:00", salida:"16:30", tipo:"operario" };
 const ADMIN    = { entrada:"08:00", salida:"17:00", tipo:"administrativo" };
-// 2026-07-06 = lunes, 2026-07-11 = sábado, 2026-07-12 = domingo
+// 2026-07-06 = lunes, 2026-07-11 = sábado
 
 test("calcRecord: día normal de operario con extra y sin demora", () => {
   const c = calcRecord({ fecha:"2026-07-06", entrada:"06:00", salida:"17:30" }, OPERARIO, {});
-  assert.equal(c.trabajado, 630);   // 06:00→16:30
+  assert.equal(c.trabajado, 630);
   assert.equal(c.jornada, 630);
-  assert.equal(c.extra, 60);        // 16:30→17:30
+  assert.equal(c.extra, 60);
   assert.equal(c.demora, 0);
   assert.equal(c.salTemprana, 0);
 });
@@ -106,15 +109,15 @@ test("calcRecord: operario NO acumula extra antes de las 06:00", () => {
 
 test("calcRecord: sábado de operario — salida ref 13:00, sin extras", () => {
   const c = calcRecord({ fecha:"2026-07-11", entrada:"06:00", salida:"14:00" }, OPERARIO, {});
-  assert.equal(c.jornada, 420);     // 06:00→13:00
-  assert.equal(c.salTemprana, 0);   // se fue después de la ref
-  assert.equal(c.extra, null);      // sábado no genera extra para operarios
+  assert.equal(c.jornada, 420);
+  assert.equal(c.salTemprana, 0);
+  assert.equal(c.extra, null);
 });
 
 test("calcRecord: feriado de operario — salida ref 14:00 y lo demás es extra", () => {
   const sp = { "2026-07-06": { tipo:"feriado" } };
   const c = calcRecord({ fecha:"2026-07-06", entrada:"06:00", salida:"16:00" }, OPERARIO, sp);
-  assert.equal(c.extra, 120);       // 14:00→16:00
+  assert.equal(c.extra, 120);
   assert.equal(c.salTemprana, 0);
 });
 
@@ -126,7 +129,7 @@ test("calcRecord: administrativo en finde — todo es extra", () => {
 
 test("calcRecord: extraCorr manual pisa el cálculo", () => {
   const c = calcRecord({ fecha:"2026-07-06", entrada:"06:00", salida:"17:30", extraCorr:30 }, OPERARIO, {});
-  assert.equal(c.extra, 30);        // manda la corrección, no los 60 del reloj
+  assert.equal(c.extra, 30);
 });
 
 /* ── calcularLiquidacion ───────────────────────────────────────────── */
@@ -150,14 +153,20 @@ test("calcularLiquidacion: caso base — extras suman, demoras descuentan", () =
   assert.equal(d.diasTrabajados, 2);
 });
 
+test("calcularLiquidacion: 30 min de demora descuentan 2 fracciones (regla RRHH)", () => {
+  const calcs = [{ id:"1", fecha:"2026-07-07", trabajado:600, extra:0, demora:30, salTemprana:0 }];
+  const d = calcularLiquidacion(P_BASE, calcs);
+  assert.equal(d.fraccionesDemora, 2);
+  assert.equal(d.descDemoras, 2000);            // 4000/4 × 2
+});
+
 test("calcularLiquidacion: el rango desde/hasta filtra registros", () => {
   const calcs = [
-    { id:"1", fecha:"2026-06-30", trabajado:630, extra:600, demora:0, salTemprana:0 }, // fuera
-    { id:"2", fecha:"2026-07-06", trabajado:630, extra:60,  demora:0, salTemprana:0 }, // dentro
+    { id:"1", fecha:"2026-06-30", trabajado:630, extra:600, demora:0, salTemprana:0 },
+    { id:"2", fecha:"2026-07-06", trabajado:630, extra:60,  demora:0, salTemprana:0 },
   ];
   const d = calcularLiquidacion(P_BASE, calcs);
   assert.equal(d.horasExtra, 1);
-  // y opts pisa el rango de p:
   const d2 = calcularLiquidacion(P_BASE, calcs, { desde:"2026-06-01", hasta:"2026-06-30" });
   assert.equal(d2.horasExtra, 10);
 });
@@ -165,8 +174,8 @@ test("calcularLiquidacion: el rango desde/hasta filtra registros", () => {
 test("calcularLiquidacion: overrides manuales mandan", () => {
   const calcs = [{ id:"1", fecha:"2026-07-07", trabajado:610, extra:0, demora:60, salTemprana:0 }];
   const d = calcularLiquidacion({ ...P_BASE, descDemorasManual:"0", impExtrasManual:"99999" }, calcs);
-  assert.equal(d.descDemoras, 0);               // descuento borrado a mano
-  assert.equal(d.impExtrasReloj, 99999);        // importe manual
+  assert.equal(d.descDemoras, 0);
+  assert.equal(d.impExtrasReloj, 99999);
 });
 
 test("calcularLiquidacion: adelantos en lista y compat con p.adelanto viejo", () => {
@@ -183,8 +192,8 @@ test("calcularLiquidacion: retiro con recupero SALDADO no se descuenta en plata"
   ];
   const d = calcularLiquidacion(P_BASE, calcs);
   assert.equal(d.recu.recuperado, 60);
-  assert.equal(d.fraccionesSalTemp, 0);          // la deuda se saldó → sin descuento
-  assert.equal(d.totalExtraNetoMin, 10);         // 70 − 60 recuperados
+  assert.equal(d.fraccionesSalTemp, 0);
+  assert.equal(d.totalExtraNetoMin, 10);
 });
 
 test("snapshotLiquidacion: serializable y sin rangeCalcs", () => {
