@@ -165,6 +165,12 @@ function parseDateVal(val) {
   return null;
 }
 
+// Slug del nombre del reloj para que el id sea único por persona, no solo por
+// número: si el reloj reusa un N° para otra persona, los registros no se pisan.
+const slugNombre = s => String(s).trim().toLowerCase()
+  .replace(/[^a-z0-9ñ ]/g, "")
+  .replace(/ +/g, "-");
+
 function parseAnormalSheet(ws) {
   const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
   const records = [];
@@ -177,7 +183,7 @@ function parseAnormalSheet(ws) {
     const fechaStr = parseDateVal(fecha);
     if (!fechaStr) continue;
     const { entrada, salida, soloEntrada } = extractEntradaSalida(row);
-    records.push({ id:`${n}_${fechaStr}`, empNo:n, nombre:String(nombre).trim(), depto:row[2]?String(row[2]).trim():"pyg", fecha:fechaStr, entrada, salida, soloEntrada });
+    records.push({ id:`${n}_${slugNombre(nombre)}_${fechaStr}`, empNo:n, nombre:String(nombre).trim(), depto:row[2]?String(row[2]).trim():"pyg", fecha:fechaStr, entrada, salida, soloEntrada });
   }
   return records;
 }
@@ -1726,7 +1732,7 @@ function AppMain({ session }) {
                       if(!emp) return;
                       const recMin = newRec.ausencia ? (parseTimeVal(newRec.recuperarMin)||0) : 0;
                       const sufijo = newRec.ausencia ? `_${newRec.ausencia}` : "_manual";
-                      const id=`${newRec.empNo}_${newRec.fecha}${sufijo}`;
+                      const id=`${newRec.empNo}_${slugNombre(emp.nombre)}_${newRec.fecha}${sufijo}`;
                       const manRec={
                         id, empNo:Number(newRec.empNo), nombre:emp.nombre, depto:emp.depto,
                         fecha:newRec.fecha,
