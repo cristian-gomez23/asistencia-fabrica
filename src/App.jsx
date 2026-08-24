@@ -52,6 +52,22 @@ const TIPO_CFG = {
   administrativo:{ label:"Administrativo",bg:"#f0faf4", color:"#276749", border:"#c3e6cb" },
 };
 
+const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : s;
+
+const COL = {
+  bg:"#f5f6f8", surface:"#ffffff", border:"#e8ecf1", border2:"#d4dbe4",
+  text:"#1e2a38", textSub:"#5a6a7a", textFaint:"#96a3b0",
+  accent:"#3d6b9e", accentBg:"#edf2f9", accentSoft:"#dce8f5",
+};
+const SANS = "'DM Sans', system-ui, sans-serif";
+const MONO = "'DM Mono', 'Courier New', monospace";
+
+/* ─── Inputs estables (definidos a nivel módulo para no perder el foco) ─────── */
+const INPUT_STYLE = {
+  border:`1px solid ${COL.border2}`, borderRadius:8, outline:"none",
+  background:"#fff", color:COL.text,
+};
+
 function FieldInput({ label, prefix="$", note="", value, onChange }) {
   return (
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>

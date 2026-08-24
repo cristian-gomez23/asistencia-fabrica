@@ -191,24 +191,6 @@ export function detectSchedule(recs) {
   return { entrada:minsToHHMM(ents[Math.floor(ents.length/2)]), salida:sals.length?minsToHHMM(sals[Math.floor(sals.length/2)]):"16:30" };
 }
 
-export const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : s;
-
-export const COL = {
-  bg:"#f5f6f8", surface:"#ffffff", border:"#e8ecf1", border2:"#d4dbe4",
-  text:"#1e2a38", textSub:"#5a6a7a", textFaint:"#96a3b0",
-  accent:"#3d6b9e", accentBg:"#edf2f9", accentSoft:"#dce8f5",
-};
-export const SANS = "'DM Sans', system-ui, sans-serif";
-export const MONO = "'DM Mono', 'Courier New', monospace";
-
-/* ─── Inputs estables (definidos a nivel módulo para no perder el foco) ─────── */
-export const INPUT_STYLE = {
-  border:`1px solid ${COL.border2}`, borderRadius:8, outline:"none",
-  background:"#fff", color:COL.text,
-};
-
-
-
 /* ────────────────────────────────────────────────────────────────────
    calcularLiquidacion(p, calcs, opts)
    p     = parámetros del empleado para el período (liqParams[empNo])
