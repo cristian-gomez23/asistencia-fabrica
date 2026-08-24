@@ -3062,7 +3062,17 @@ function AppMain({ session }) {
         {/* ── 6 RESUMEN LIQUIDACIONES ── */}
         {tab===6&&(()=>{
           const activeEmps = empList.filter(e=>e.activo!==false);
-          const getP = (empNo) => liqParams[String(empNo)] || {};
+          // Los parámetros (adelantos, sueldo, premios) se leen del período
+          // que se está MIRANDO. Si filtrás julio, ves los datos de julio,
+          // aunque en Liquidación esté cargado agosto.
+          const getP = (empNo) => {
+            const key = String(empNo);
+            if (!resumenMes || resumenMes === liqPeriodoSel) return liqParams[key] || {};
+            const st = liqStoreRef.current[resumenMes];
+            if (st && st.datos[key]) return st.datos[key];
+            return liqParams[key] || {}; // mes sin período propio: cae al vigente
+          };
+          const resumenSinPeriodo = !!resumenMes && resumenMes !== liqPeriodoSel && !liqStoreRef.current[resumenMes];
 
           const fmt$ = n => n ? `$${Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}` : "—";
 
@@ -3240,6 +3250,12 @@ function AppMain({ session }) {
                   </div>
                 )}
               </div>
+
+              {resumenSinPeriodo && (
+                <div style={{background:"#fef9f0",border:"1px solid #f6d860",borderRadius:10,padding:"9px 14px",marginBottom:14,fontSize:12,color:"#92400e"}}>
+                  ⚠ {mesLabel} no tiene una liquidación propia guardada (es anterior a la separación por períodos). Se muestran los parámetros del período {liqPeriodoSel||"vigente"}: los importes de adelantos, premios y sueldo pueden no ser los de ese mes.
+                </div>
+              )}
 
               {filas.length === 0 && (
                 <div style={{padding:"60px 20px",textAlign:"center",color:COL.textFaint,fontSize:13,
