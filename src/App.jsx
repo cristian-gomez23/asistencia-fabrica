@@ -4293,12 +4293,17 @@ export default function App() {
   const [session, setSession] = useState(() => {
     try {
       const s = sessionStorage.getItem("pyg_session");
-      return s ? JSON.parse(s) : null;
+      const parsed = s ? JSON.parse(s) : null;
+      // Sincrónico: el token tiene que estar ANTES de que AppMain monte y
+      // dispare la carga inicial (los efectos del hijo corren primero).
+      setSbToken(parsed?.token || null);
+      return parsed;
     } catch { return null; }
   });
 
   const handleLogin = (sessionData) => {
     sessionStorage.setItem("pyg_session", JSON.stringify(sessionData));
+    setSbToken(sessionData?.token || null);
     setSession(sessionData);
   };
 
