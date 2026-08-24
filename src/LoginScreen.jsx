@@ -83,6 +83,8 @@ export default function LoginScreen({ onLogin }) {
         email:    session.user.email,
         userId:   session.user.id,
         token:    session.access_token,
+        refreshToken: session.refresh_token,
+        expiresAt:    Date.now() + (session.expires_in || 3600) * 1000,
         // Supabase permite guardar metadata extra en user_metadata
         rol:      session.user.user_metadata?.rol || "Usuario",
         nombre:   session.user.user_metadata?.nombre || session.user.email,

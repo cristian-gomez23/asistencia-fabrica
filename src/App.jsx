@@ -9,56 +9,10 @@ fontLink.rel = "stylesheet";
 fontLink.href = "https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@300;400;500&display=swap";
 document.head.appendChild(fontLink);
 
-const SEED_EMPLOYEES = [
-  [1,"alvaro cuello"],[2,"noel arguell"],[3,"frank"],[4,"urquia pini"],
-  [5,"giusto alfredo"],[6,"sosa jose"],[7,"sergio cabre"],[8,"eder martinez"],
-  [9,"robert"],[10,"heber busto"],[11,"javier"],[12,"amaya david"],
-  [13,"ferreyra seba"],[14,"moya jonathan"],[15,"romero javier"],[16,"rivas gonzalo"],
-  [17,"soule marcos"],[18,"francelys"],[19,"iturra leonel"],[20,"matias perotti"],
-  [21,"alejo diaz"],[22,"alvarez gustavo"],[23,"marcelo figuero"],[24,"erick perdenera"],
-  [25,"alfonso sergio"],[26,"juan astrada"],[27,"marcelo carrizo"],[28,"CASTRO EZEQUIEL"],
-  [29,"zarate sebastia"],[30,"marcos matuchin"],[31,"DAVID MONTES"],[32,"leonel p visval"],
-  [33,"eduardo ingar"],[34,"miguel ramirez"],[35,"eduardo herrera"],[36,"ivanna santande"],
-  [37,"luis jimenez"],[38,"marcos"],[39,"marcosaldain"],[40,"guille balmaced"],
-  [41,"emmanuel torres"],[42,"jose e jimenez"],[43,"ramos nerl"],[44,"leo velez"],
-  [45,"gonzalez guille"],[46,"quinteros carlo"],[47,"moyano da"],[48,"saire braian"],
-  [49,"campos carlos"],[50,"gabi salas"],[51,"jose martln"],[52,"marcos natali"],
-  [53,"david medina"],[55,"cristian g"],[56,"sosa"],[57,"arjona rodrigo"],
-  [58,"arjona"],[59,"bianciotti"],[60,"javier d la tor"],[61,"ledesma mar"],
-  [62,"pena juan"],[63,"peralta crist"],[64,"juan pena"],[65,"santillan fac"],
-  [66,"arrieta paulo"],[67,"pringles fabian"],[68,"romero valentin"],[69,"rodriguez jose"],
-  [70,"oliva luca"],[71,"campos mauric"],[72,"favre"],[73,"jara leo"],
-  [74,"arjona r"],[75,"jorge oliva"],[76,"oliva jorge"],[77,"walter mont"],
-  [78,"ibarra mario"],[79,"segundo claudio"],[80,"fernando cabeza"],[81,"ventura guille"],
-  [82,"ventura"],[83,"suarez pablo"],[84,"rojas christ"],[85,"suarez david"],
-  [86,"alan fonseca"],[87,"almada seba"],[88,"mansilla lucas"],[89,"bellido alexis"],
-  [90,"marchetti chris"],[91,"navarlat david"],[92,"reynoso fernand"],[93,"franco caceres"],
-  [94,"toschi nico"],[95,"albornoz marcos"],[96,"aimada franco"],[97,"suarez jose"],
-  [98,"luna luis"],[99,"aguero lucas"],[100,"lucas guzman"],[101,"almada"],
-  [102,"romero"],[103,"eduardo rivero"],[104,"arguello marian"],[105,"gonza pereyra"],
-  [106,"omar retamozo"],[107,"javier papalini"],[108,"ale nieto"],[109,"emiliano domin"],
-  [110,"yapura danisa"],[111,"rasilla"],[112,"facu"],[113,"matl"],
-  [114,"marina"],[115,"adrian"],[116,"guille v"],[117,"guille ded"],
-  [118,"diego vera"],[119,"adrian gomez"],[120,"aguilera joaqun"],[121,"diego nuevo"],
-  [122,"orlovas fran"],[123,"gustavo"],[124,"lujan"],[125,"gaston"],
-  [126,"gallardo"],[127,"emanuel"],[128,"ruben"],[129,"papurello"],
-  [130,"joel caro"],[131,"walter fern"],[132,"leonel quint"],[133,"danelutti crist"],
-  [134,"jara maxi"],[135,"luis fernandez"],[136,"pinto PABLO"],[137,"michael"],
-  [138,"daneluti"],[139,"hernan silva"],[140,"pinero"],[141,"antonio"],
-  [142,"juanjo"],[143,"luduena jonat"],[144,"alan"],[145,"sarfatti lea"],
-  [146,"leandro"],[147,"noe"],[148,"fuentes pablo"],[149,"facundo moreno"],
-  [150,"nicolas"],[151,"navarro ale"],[152,"pintado daniel"],[153,"miguel villalba"],
-  [154,"hugo g"],[155,"rojo hernan"],[156,"valen"],[157,"moreno cristian"],
-  [158,"rodrigo juarez"],[159,"celina"],[160,"mitter juan"],[161,"torres marcelo"],
-  [162,"seba figueroa"],[163,"ale"],[164,"ale wolff"],[165,"fede martinez"],
-  [166,"maxi varela"],[167,"damian diaz"],[168,"gonza gonzalez"],[169,"mariano luna"],
-  [170,"porcel j"],[171,"mario vargas"],[172,"basualdo luis"],[173,"liendo marcos"],
-  [174,"eber noriega"],[175,"david martinez"],[176,"gerardo ferreyr"],[177,"luis basualdo"],
-  [178,"rodrigo romero"],[179,"kevin paez"],[180,"nahuel serrano"],[181,"lucas torres"],
-  [182,"morena s"],[183,"matias padilla"],[184,"facundo b"],[185,"oscar"],
-  [186,"torres lucas"],[187,"tissera gabriel"],[188,"joaquin"],[189,"joaco mourino"],
-  [190,"julio"],[920,"abraham javier"],
-];
+const SEED_EMPLOYEES = [];
+// Los empleados viven en Supabase (tabla rrhh.empleados). No se shippean
+// nombres reales en el bundle: la semilla queda vacia y la app se puebla
+// desde el servidor o desde la primera importacion del reloj.
 
 function makeDefaultEmployees() {
   const map = {};
@@ -765,13 +719,25 @@ function exportRegistrosPorEmpleado(recs, employees, manualSalidas, specialDays)
 }
 
 /* ─── Supabase ───────────────────────────────────────────────────────────── */
-const SB_URL = import.meta.env.VITE_SUPABASE_URL;
-const SB_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
-const SB_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SB_URL  = import.meta.env.VITE_SUPABASE_URL;
+// SOLO el anon key en el frontend. El service_role NUNCA se shippea al
+// navegador: saltea RLS y es la llave maestra de todo el proyecto.
+const SB_KEY  = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SB_ANON = SB_KEY;
+
+// Token JWT del usuario logueado. Lo setea el wrapper de App al iniciar
+// sesión y al refrescar. Con RLS activo, este token es el que autoriza.
+let SB_TOKEN = null;
+export function setSbToken(t) { SB_TOKEN = t; }
+
+// Handler de 401/403: sesión vencida o sin permisos → forzar re-login.
+let _sbOnAuthError = null;
+function setSbAuthErrorHandler(fn) { _sbOnAuthError = fn; }
+function _reportAuthError() { if (_sbOnAuthError) _sbOnAuthError(); }
 
 const SB_HEADERS = (write=false) => ({
   "Content-Type": "application/json",
-  "Authorization": `Bearer ${SB_KEY}`,
+  "Authorization": `Bearer ${SB_TOKEN || SB_KEY}`,
   "apikey": SB_KEY,
   "Accept-Profile": "rrhh",
   ...(write ? {"Content-Profile":"rrhh"} : {}),
@@ -790,6 +756,7 @@ async function sbFetch(table, params="") {
     if (!res.ok) {
       let body = ""; try { body = await res.text(); } catch {}
       console.error(`[Supabase] Error al leer "${table}": HTTP ${res.status} ${body}`.trim());
+      if (res.status === 401) _reportAuthError();
       return null;
     }
     return await res.json();
@@ -819,6 +786,7 @@ async function _sbWrite(url, options, table, attempt = 0) {
       let body = "";
       try { body = await res.text(); } catch {}
       _reportWriteError(table, `HTTP ${res.status} ${res.statusText} ${body}`.trim());
+      if (res.status === 401) _reportAuthError();
       return false;
     }
     return true;
@@ -897,6 +865,8 @@ function sbSubscribe(table, onInsert, onUpdate, onDelete) {
           {event:"DELETE",schema:"rrhh",table},
         ]}},ref:"2"
       }));
+      // Con RLS activo, realtime necesita el token del usuario, no el anon
+      if (SB_TOKEN) ws.send(JSON.stringify({topic:"realtime:public",event:"access_token",payload:{access_token:SB_TOKEN},ref:"3"}));
       heartbeat = setInterval(()=>ws.readyState===1&&ws.send(JSON.stringify({topic:"phoenix",event:"heartbeat",payload:{},ref:"hb"})),25000);
     };
 
@@ -1046,6 +1016,15 @@ function AppMain({ session }) {
   // No hay cache local. La cola de pendientes vive solo en memoria: si un
   // upsert falla se reintenta cada 5s mientras la pestaña esté abierta, y
   // si intentan cerrar/refrescar con pendientes, el navegador avisa.
+  // ── Períodos de liquidación ──────────────────────────────────────────────
+  // liqParams SIEMPRE contiene el período seleccionado. El resto de los
+  // períodos vive en liqStoreRef y en la tabla rrhh.liquidaciones
+  // (clave emp_no+periodo): editar un mes NUNCA toca los anteriores.
+  const [liqPeriodoSel, setLiqPeriodoSel] = useState(null); // "YYYY-MM" visible
+  const [liqPeriodos, setLiqPeriodos]     = useState([]);   // lista desc
+  const [liqCerrado, setLiqCerrado]       = useState(false);// período visible cerrado
+  const liqStoreRef   = useRef({});   // { periodo: { datos:{empKey:datos}, estados:{empKey} } }
+  const liqPeriodoRef = useRef(null); // período visible (para efectos/flush)
   const prevLiqRef    = useRef({});   // último estado confirmado por el servidor
   const liqSyncTimer  = useRef(null);
   const liqParamsRef  = useRef(liqParams);
@@ -1060,9 +1039,15 @@ function AppMain({ session }) {
       const n = parseInt(key);
       const datos = current[key];
       if (isNaN(n) || n <= 0 || datos === undefined) { delete liqPendingRef.current[key]; continue; }
-      const ok = await sbUpsertSingle("liq_params", { emp_no: n, datos }, "emp_no");
+      // El pending guarda a qué período pertenece la edición (por si el
+      // usuario cambió de período antes de que sincronice)
+      const per = typeof liqPendingRef.current[key] === "string"
+        ? liqPendingRef.current[key] : liqPeriodoRef.current;
+      if (!per) { delete liqPendingRef.current[key]; continue; }
+      const ok = await sbUpsertSingle("liquidaciones", { emp_no: n, periodo: per, datos }, "emp_no,periodo");
       if (ok) {
-        prevLiqRef.current[key] = JSON.parse(JSON.stringify(datos));
+        if (per === liqPeriodoRef.current) prevLiqRef.current[key] = JSON.parse(JSON.stringify(datos));
+        if (liqStoreRef.current[per]) liqStoreRef.current[per].datos[key] = datos;
         delete liqPendingRef.current[key];
       } else {
         huboFallo = true;
@@ -1078,7 +1063,7 @@ function AppMain({ session }) {
     liqParamsRef.current = liqParams;
     for (const [key, datos] of Object.entries(liqParams)) {
       if (JSON.stringify(prevLiqRef.current[key]) !== JSON.stringify(datos)) {
-        liqPendingRef.current[key] = true;
+        liqPendingRef.current[key] = liqPeriodoRef.current;
       }
     }
     if (!Object.keys(liqPendingRef.current).length) return;
@@ -1121,9 +1106,10 @@ function AppMain({ session }) {
       sbFetch("empleados","select=*"),
       sbFetch("dias_especiales","select=*"),
       sbFetch("correcciones","select=*"),
+      sbFetch("liquidaciones","select=*&order=periodo.desc"),
       sbFetch("liq_params","select=*"),
       sbFetch("circular_historico","select=*&order=archived_at.desc"),
-    ]).then(([regs,emps,dias,corrs,liqRows,histRows])=>{
+    ]).then(([regs,emps,dias,corrs,liqRows,legacyLiq,histRows])=>{
       // Solo sobreescribir si Supabase trae datos — nunca borrar con array vacío
       if (regs?.length) {
         const byId={};
@@ -1164,8 +1150,36 @@ function AppMain({ session }) {
       {
         // SERVIDOR GANA: el estado se reemplaza por lo de Supabase. Solo
         // sobreviven las ediciones propias en vuelo (cola de pendientes).
-        const serverMap = {};
-        for (const row of (liqRows || [])) serverMap[String(row.emp_no)] = row.datos;
+        // Cada período es una fila (emp_no, periodo) en rrhh.liquidaciones.
+        const store = {};
+        for (const row of (liqRows || [])) {
+          const per = row.periodo;
+          if (!store[per]) store[per] = { datos:{}, estados:{} };
+          store[per].datos[String(row.emp_no)]   = row.datos;
+          store[per].estados[String(row.emp_no)] = row.estado || "borrador";
+        }
+        // Fallback pre-migración: si la tabla nueva está vacía pero
+        // liq_params tiene datos, se toman como el período vigente y se
+        // suben a la tabla nueva de una (auto-migración).
+        if (!Object.keys(store).length && legacyLiq?.length) {
+          const per = String(legacyLiq[0]?.datos?.desde || new Date().toISOString()).slice(0,7);
+          store[per] = { datos:{}, estados:{} };
+          for (const row of legacyLiq) {
+            store[per].datos[String(row.emp_no)]   = row.datos;
+            store[per].estados[String(row.emp_no)] = "borrador";
+          }
+          sbUpsert("liquidaciones", legacyLiq.map(r=>({emp_no:r.emp_no, periodo:per, datos:r.datos, estado:"borrador"})), "emp_no,periodo");
+        }
+        liqStoreRef.current = store;
+        const pers = Object.keys(store).sort().reverse();
+        setLiqPeriodos(pers);
+        const sel = pers[0] || null;
+        liqPeriodoRef.current = sel;
+        setLiqPeriodoSel(sel);
+        const cur = sel ? store[sel] : null;
+        const ests = cur ? Object.values(cur.estados) : [];
+        setLiqCerrado(ests.length > 0 && ests.every(e => e === "cerrada"));
+        const serverMap = cur ? cur.datos : {};
         setLiqParams(local => {
           const merged = { ...serverMap };
           for (const key of Object.keys(liqPendingRef.current)) {
@@ -1318,7 +1332,12 @@ function AppMain({ session }) {
     for (const id of idsCorr) sbDelete("correcciones", id);
     if (keys.length) setManualSalidas(p=>{const u={...p}; for(const k of keys) delete u[k]; return u;});
 
-    // 3) Circular + histórico de circulares
+    // 3) Liquidaciones de todos los períodos + circular + histórico
+    sbDelete("liquidaciones", emp.empNo, "emp_no");
+    for (const st of Object.values(liqStoreRef.current)) {
+      delete st.datos[String(emp.empNo)];
+      delete st.estados[String(emp.empNo)];
+    }
     sbDelete("liq_params", emp.empNo, "emp_no");
     setLiqParams(p=>{const u={...p}; delete u[String(emp.empNo)]; return u;});
     delete prevLiqRef.current[String(emp.empNo)];
@@ -1363,6 +1382,62 @@ function AppMain({ session }) {
   // - resetea overrides del mes anterior (llegadas tarde, retiros, hs extra manual,
   //   SAC, vacaciones, feriados, findeSel)
   // - CONSERVA adelantos y todos los datos de la circular (sueldo, valores, etc.)
+  // Cambia el período visible: guarda el actual en el store y carga el otro.
+  // prevLiqRef se resetea ANTES de setLiqParams para no marcar pendientes falsos.
+  const cambiarPeriodo = useCallback((per) => {
+    if (!per || per === liqPeriodoRef.current) return;
+    if (liqPeriodoRef.current) {
+      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{} };
+      cur.datos = { ...liqParamsRef.current };
+      liqStoreRef.current[liqPeriodoRef.current] = cur;
+    }
+    const target = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    liqStoreRef.current[per] = target;
+    liqPeriodoRef.current = per;
+    prevLiqRef.current = JSON.parse(JSON.stringify(target.datos));
+    setLiqPeriodoSel(per);
+    const ests = Object.values(target.estados);
+    setLiqCerrado(ests.length > 0 && ests.every(e => e === "cerrada"));
+    setLiqParams({ ...target.datos });
+  }, []);
+
+  // Cierra el período visible: todas sus filas pasan a estado "cerrada" y la
+  // UI queda en solo lectura. Los registros del reloj no se tocan.
+  const cerrarPeriodo = useCallback(async () => {
+    const per = liqPeriodoRef.current;
+    if (!per) return;
+    if (!confirm(`¿Cerrar el período ${per}? Las liquidaciones quedan en solo lectura. Podés reabrirlo si hace falta corregir algo.`)) return;
+    const datos = liqParamsRef.current;
+    const rows = Object.entries(datos)
+      .filter(([k,d]) => d && !isNaN(parseInt(k)))
+      .map(([k,d]) => ({ emp_no: parseInt(k), periodo: per, datos: d, estado: "cerrada", cerrada_at: new Date().toISOString() }));
+    if (!rows.length) return;
+    const ok = await sbUpsert("liquidaciones", rows, "emp_no,periodo");
+    if (!ok) { alert("No se pudo cerrar el período (falló el guardado). Revisá la conexión e intentá de nuevo."); return; }
+    const st = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    st.datos = { ...datos };
+    for (const [k] of rows.map(r=>[String(r.emp_no)])) st.estados[k] = "cerrada";
+    liqStoreRef.current[per] = st;
+    setLiqCerrado(true);
+  }, []);
+
+  const reabrirPeriodo = useCallback(async () => {
+    const per = liqPeriodoRef.current;
+    if (!per) return;
+    if (!confirm(`¿Reabrir el período ${per} para edición?`)) return;
+    const datos = liqParamsRef.current;
+    const rows = Object.entries(datos)
+      .filter(([k,d]) => d && !isNaN(parseInt(k)))
+      .map(([k,d]) => ({ emp_no: parseInt(k), periodo: per, datos: d, estado: "borrador", cerrada_at: null }));
+    if (!rows.length) return;
+    const ok = await sbUpsert("liquidaciones", rows, "emp_no,periodo");
+    if (!ok) { alert("No se pudo reabrir el período (falló el guardado)."); return; }
+    const st = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    for (const k of Object.keys(st.estados)) st.estados[k] = "borrador";
+    liqStoreRef.current[per] = st;
+    setLiqCerrado(false);
+  }, []);
+
   const iniciarPeriodo = useCallback((nombrePeriodo, desde, hasta) => {
     // Campos a borrar de cada empleado al arrancar el período
     const RESET = [
@@ -1379,19 +1454,33 @@ function AppMain({ session }) {
       "ausencias",                                 // días de falta descontados
       "findeSel",                                  // selección de findes
     ];
-    setLiqParams(prev => {
-      const next = {};
-      for (const [key, datos] of Object.entries(prev)) {
-        const limpio = { ...datos };
-        for (const f of RESET) delete limpio[f];
-        // setear el período nuevo (adelantos y circular quedan intactos)
-        limpio.periodo = nombrePeriodo;
-        limpio.desde   = desde;
-        limpio.hasta   = hasta;
-        next[key] = limpio;
-      }
-      return next;
-    });
+    // El período nuevo se CREA copiando la circular del período visible.
+    // El período anterior queda intacto en el store y en Supabase.
+    const perKey = String(desde).slice(0,7);
+    const base = liqParamsRef.current;
+    const next = {};
+    for (const [key, datos] of Object.entries(base)) {
+      const limpio = { ...datos };
+      for (const f of RESET) delete limpio[f];
+      // setear el período nuevo (adelantos y circular quedan intactos)
+      limpio.periodo = nombrePeriodo;
+      limpio.desde   = desde;
+      limpio.hasta   = hasta;
+      next[key] = limpio;
+    }
+    // guardar lo visible antes de cambiar
+    if (liqPeriodoRef.current) {
+      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{} };
+      cur.datos = { ...base };
+      liqStoreRef.current[liqPeriodoRef.current] = cur;
+    }
+    liqStoreRef.current[perKey] = { datos: next, estados: {} };
+    setLiqPeriodos(p => (p.includes(perKey) ? p : [...p, perKey]).sort().reverse());
+    liqPeriodoRef.current = perKey;
+    prevLiqRef.current = {};      // todo distinto → el effect sube todas las filas nuevas
+    setLiqPeriodoSel(perKey);
+    setLiqCerrado(false);
+    setLiqParams(next);
   }, []);
 
   // Alta manual de empleado (sin reloj / sueldo fijo)
@@ -2760,6 +2849,7 @@ function AppMain({ session }) {
                           {isEd
                             ? <>
                                 <button onClick={()=>{
+                                  if (liqCerrado) { alert(`El período ${liqPeriodoSel} está cerrado. Reabrilo desde Liquidación para editar la circular, o iniciá un período nuevo.`); setCircularEdit(null); return; }
                                   const anterior = liqParams[String(emp.empNo)] || {};
                                   const sueldoCambio =
                                     anterior.sueldoBasico &&
@@ -3232,10 +3322,13 @@ function AppMain({ session }) {
           // Get params for this employee (or empty object)
           const empKey   = liqEmp ? String(liqEmp) : "__none__";
           const p        = liqParams[empKey] || {};
-          const setP     = (field, val) => setLiqParams(prev => ({
-            ...prev,
-            [empKey]: { ...(prev[empKey]||{}), [field]: val }
-          }));
+          const setP     = (field, val) => {
+            if (liqCerrado) return; // período cerrado: solo lectura
+            setLiqParams(prev => ({
+              ...prev,
+              [empKey]: { ...(prev[empKey]||{}), [field]: val }
+            }));
+          };
 
           // Date range filter
           const desde  = p.desde || "";
@@ -3403,8 +3496,32 @@ function AppMain({ session }) {
                 </div>
                 <div>
                   <div style={{fontSize:11,color:COL.textFaint,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Período</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <select value={liqPeriodoSel||""} onChange={e=>cambiarPeriodo(e.target.value)}
+                      style={{background:COL.surface,border:`1px solid ${COL.border2}`,borderRadius:8,color:COL.text,padding:"8px 12px",fontFamily:SANS,fontSize:13,outline:"none",cursor:"pointer",minWidth:130}}>
+                      {!liqPeriodos.length && <option value="">— sin períodos —</option>}
+                      {liqPeriodos.map(per=>{
+                        const st = liqStoreRef.current[per];
+                        const ests = st ? Object.values(st.estados) : [];
+                        const cerrado = ests.length>0 && ests.every(e=>e==="cerrada");
+                        return <option key={per} value={per}>{per}{cerrado?" 🔒":""}</option>;
+                      })}
+                    </select>
+                    {liqPeriodoSel && (liqCerrado
+                      ? <button onClick={reabrirPeriodo} title="Reabrir el período para edición"
+                          style={{background:"#fff",color:"#b45309",border:"1px solid #f6d860",borderRadius:8,padding:"8px 12px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>
+                          Reabrir
+                        </button>
+                      : <button onClick={cerrarPeriodo} title="Cerrar el período: queda en solo lectura"
+                          style={{background:"#fff",color:COL.textSub,border:`1px solid ${COL.border2}`,borderRadius:8,padding:"8px 12px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>
+                          🔒 Cerrar
+                        </button>)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:COL.textFaint,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Nombre en recibo</div>
                   <input value={periodo} onChange={e=>setP("periodo",e.target.value)} placeholder="ej: MARZO 2026"
-                    style={{...S.sInput,width:160}} />
+                    style={{...S.sInput,width:150}} />
                 </div>
                 <div>
                   <div style={{fontSize:11,color:COL.textFaint,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Fecha ingreso</div>
@@ -3435,6 +3552,13 @@ function AppMain({ session }) {
                   </button>
                 )}
               </div>
+
+              {/* ── Banner de período cerrado ── */}
+              {liqCerrado && (
+                <div style={{background:"#fef9f0",border:"1px solid #f6d860",borderRadius:10,padding:"10px 16px",marginBottom:16,fontSize:12.5,color:"#92400e",display:"flex",alignItems:"center",gap:8}}>
+                  🔒 <strong>Período {liqPeriodoSel} cerrado</strong> — las liquidaciones de este período son de solo lectura y no se van a modificar aunque cambien los registros. Usá «Reabrir» solo si necesitás corregir algo.
+                </div>
+              )}
 
               {/* ── Formulario "Nuevo período" ── */}
               {nuevoPeriodoOpen && (()=>{
@@ -4180,8 +4304,46 @@ export default function App() {
 
   const handleLogout = () => {
     sessionStorage.removeItem("pyg_session");
+    setSbToken(null);
     setSession(null);
   };
+
+  // Token vigente hacia la capa Supabase + logout forzado ante 401
+  useEffect(() => {
+    setSbToken(session?.token || null);
+    setSbAuthErrorHandler(() => handleLogout());
+    return () => setSbAuthErrorHandler(null);
+  }, [session?.token]);
+
+  // Refresh del JWT ~5 min antes de que venza (Supabase lo emite por 1 hora).
+  // Sin esto, con RLS activo la app dejaría de guardar a la hora de loguearse.
+  useEffect(() => {
+    if (!session?.token || !session?.refreshToken) return;
+    const msLeft = (session.expiresAt || Date.now() + 55*60*1000) - Date.now() - 5*60*1000;
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`${SB_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": SB_ANON },
+          body: JSON.stringify({ refresh_token: session.refreshToken }),
+        });
+        const d = await res.json();
+        if (res.ok && d.access_token) {
+          const next = {
+            ...session,
+            token: d.access_token,
+            refreshToken: d.refresh_token || session.refreshToken,
+            expiresAt: Date.now() + (d.expires_in || 3600) * 1000,
+          };
+          sessionStorage.setItem("pyg_session", JSON.stringify(next));
+          setSession(next);
+        } else {
+          handleLogout(); // refresh inválido → re-login
+        }
+      } catch { /* red caída: el próximo 401 fuerza logout */ }
+    }, Math.max(msLeft, 10_000));
+    return () => clearTimeout(t);
+  }, [session]);
 
   if (!session) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -4205,7 +4367,7 @@ export default function App() {
           boxShadow: "0 0 0 2px rgba(34,197,94,0.25)",
         }} />
         <span style={{ color: "#4a5a6a", fontWeight: 500 }}>
-          {session.usuario}
+          {session.nombre || session.email}
         </span>
         <span style={{
           background: "#edf2f9", color: "#3d6b9e",
