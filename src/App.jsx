@@ -2,6 +2,12 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import XLSXS from "xlsx-js-style";
 import LoginScreen from "./LoginScreen";
+import {
+  parseTimeVal, minsToHHMM, minsToDisplay, fraccionesDeUnDia,
+  fraccionesDemoraCalc, fraccionesSalTempCalc, calcRecuperacion,
+  extractEntradaSalida, parseDateVal, slugNombre, OPERARIO_EXTRA_FROM,
+  calcRecord, detectSchedule, calcularLiquidacion, snapshotLiquidacion,
+} from "./calculos";
 
 /* ─── Google Fonts injection ─────────────────────────────────────────────── */
 const fontLink = document.createElement("link");
@@ -22,109 +28,6 @@ function makeDefaultEmployees() {
   return map;
 }
 
-function parseTimeVal(val) {
-  if (val == null) return null;
-  if (typeof val === "string") {
-    const s = val.trim();
-    if (!s || s === "Ausente") return null;
-    const m = s.match(/^(\d{1,2}):(\d{2})/);
-    if (m) return +m[1] * 60 + +m[2];
-  }
-  if (typeof val === "number" && !isNaN(val)) {
-    if (val >= 0 && val < 1) return Math.round(val * 1440) % 1440;
-    return Math.round(val) % 1440;
-  }
-  return null;
-}
-
-function minsToHHMM(m) {
-  if (m == null || isNaN(m)) return null;
-  const a = Math.abs(Math.round(m));
-  return `${String(Math.floor(a/60)).padStart(2,"0")}:${String(a%60).padStart(2,"0")}`;
-}
-
-function minsToDisplay(m) {
-  if (m == null || isNaN(m)) return "—";
-  const s = m < 0 ? "−" : "";
-  const a = Math.abs(Math.round(m));
-  const h = Math.floor(a/60), min = a%60;
-  if (h === 0) return `${s}${min}min`;
-  return `${s}${h}h${min > 0 ? String(min).padStart(2,"0") : ""}`;
-}
-
-// Tolerancia de 15 min para llegadas tarde (solo afecta el descuento en plata).
-// La tolerancia se evalúa POR DÍA: cada día con ≤15 min se perdona; los días
-// que pasan los 15 cuentan por bloques de 15 desde cero (16-30=1, 31-45=2...).
-const TOLERANCIA_DEMORA = 15;
-function fraccionesDeUnDia(demoraMin) {
-  const d = Math.round(demoraMin || 0);
-  if (d <= TOLERANCIA_DEMORA) return 0;
-  return Math.ceil(d / 15) - (d % 15 === 0 ? 0 : 1);
-}
-function fraccionesDemoraCalc(calcsDelRango) {
-  if (!Array.isArray(calcsDelRango)) return 0;
-  return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.demora), 0);
-}
-// Retiros anticipados: misma lógica que las tardanzas (por día, 15 de tolerancia,
-// fracciones de 15 min). Cada fracción vale valorHora/4.
-function fraccionesSalTempCalc(calcsDelRango) {
-  if (!Array.isArray(calcsDelRango)) return 0;
-  return calcsDelRango.reduce((s, r) => s + fraccionesDeUnDia(r.salTemprana), 0);
-}
-
-// ── Recuperación de horas ─────────────────────────────────────────────────
-// Cuando un empleado falta o se retira antes, RRHH puede cargar un registro
-// manual con "horas a recuperar" (siempre en múltiplos de 30 min). Las horas
-// extra que haga DESPUÉS de esa fecha se aplican a saldar la deuda en vez de
-// pagarse, contando solo bloques de 30 min por día (un día con +7min no
-// descuenta nada; uno con +1h04 descuenta 1h y los 4min sobrantes se pagan).
-// Devuelve { deudaTotal, recuperado, pendiente, saldados } en minutos;
-// saldados = Set de ids de registros cuya deuda quedó totalmente cubierta
-// (se asigna FIFO: las extras van saldando la deuda más vieja primero).
-function calcRecuperacion(calcs) {
-  const orden = [...(calcs || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
-  const pendientes = []; // {id, resta}
-  const saldados = new Set();
-  let deudaTotal = 0, recuperado = 0;
-  for (const r of orden) {
-    if (r.recuperar && r.recuperarMin > 0) { pendientes.push({ id: r.id, resta: r.recuperarMin }); deudaTotal += r.recuperarMin; }
-    if (r.extra > 0 && !r.recuperar && pendientes.length) {
-      let aplicable = Math.floor(r.extra / 30) * 30; // solo bloques de 30 min
-      while (aplicable > 0 && pendientes.length) {
-        const d = pendientes[0];
-        const usa = Math.min(d.resta, aplicable);
-        d.resta -= usa; aplicable -= usa; recuperado += usa;
-        if (d.resta === 0) { saldados.add(d.id); pendientes.shift(); }
-      }
-    }
-  }
-  const pendiente = pendientes.reduce((s, d) => s + d.resta, 0);
-  return { deudaTotal, recuperado, pendiente, saldados };
-}
-
-function extractEntradaSalida(row) {
-  const marks = [4,5,6,7].map(c=>parseTimeVal(row[c])).filter(v=>v!=null).sort((a,b)=>a-b);
-  return {
-    entrada: marks.length >= 1 ? minsToHHMM(marks[0]) : null,
-    salida:  marks.length >= 2 ? minsToHHMM(marks[marks.length-1]) : null,
-    soloEntrada: marks.length === 1,
-  };
-}
-
-function parseDateVal(val) {
-  if (!val) return null;
-  if (typeof val === "string") return val.replace(/\//g,"-").slice(0,10);
-  if (typeof val === "number") return new Date(Math.round((val-25569)*86400000)).toISOString().slice(0,10);
-  if (val instanceof Date) return val.toISOString().slice(0,10);
-  return null;
-}
-
-// Slug del nombre del reloj para que el id sea único por persona, no solo por
-// número: si el reloj reusa un N° para otra persona, los registros no se pisan.
-const slugNombre = s => String(s).trim().toLowerCase()
-  .replace(/[^a-z0-9ñ ]/g, "")
-  .replace(/ +/g, "-");
-
 function parseAnormalSheet(ws) {
   const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
   const records = [];
@@ -142,107 +45,11 @@ function parseAnormalSheet(ws) {
   return records;
 }
 
-// Horas extra de operarios solo desde las 06:00
-const OPERARIO_EXTRA_FROM = 6 * 60; // 360 min
 
 // Colores por tipo
 const TIPO_CFG = {
   operario:      { label:"Operario",      bg:"#edf5ff", color:"#1e5fa8", border:"#c3daff" },
   administrativo:{ label:"Administrativo",bg:"#f0faf4", color:"#276749", border:"#c3e6cb" },
-};
-
-function calcRecord(rec, empCfg, specialDays) {
-  const cfg = empCfg || { entrada:"06:00", salida:"16:30", tipo:"operario" };
-  const esOperario = (cfg.tipo || "operario") === "operario";
-  const dayType    = specialDays?.[rec.fecha];
-  const diaSemana  = new Date(rec.fecha+"T12:00:00").getDay();
-  const esSabado   = diaSemana === 6;
-  const esDomingo  = diaSemana === 0;
-  const esFeriado  = dayType?.tipo === "feriado";
-
-  // extraCorr = horas extra editadas a mano (minutos). null = cálculo automático.
-  const extraManual = rec.extraCorr != null ? (rec.extraCorr > 0 ? rec.extraCorr : null) : undefined;
-
-  if (!rec.entrada || !rec.salida) return { trabajado:null, jornada:null, extra: extraManual !== undefined ? extraManual : null, demora:null, salTemprana:null };
-
-  const entMin = parseTimeVal(rec.entrada);
-  const salMin = parseTimeVal(rec.salida);
-
-  // ── Administrativos: sábados y domingos NO son obligatorios ──
-  // Todo lo que trabajen esos días se paga como hora extra.
-  if (!esOperario && (esSabado || esDomingo)) {
-    const total = Math.max(0, salMin - entMin);
-    return { trabajado:0, jornada:0, extra: extraManual !== undefined ? extraManual : (total>0 ? total : null), demora:0, salTemprana:0 };
-  }
-
-  // ── Administrativos en FERIADO: se computa la jornada normal (el feriado
-  // se paga aparte en Liquidación) y solo la diferencia por encima de la
-  // jornada de referencia va como hora extra. Sin demora ni salida temprana.
-  if (!esOperario && esFeriado) {
-    const total      = Math.max(0, salMin - entMin);
-    const jornadaRef = parseTimeVal(cfg.salida) - parseTimeVal(cfg.entrada);
-    let extra = total > jornadaRef ? total - jornadaRef : null;
-    if (extraManual !== undefined) extra = extraManual;
-    return { trabajado: Math.min(total, jornadaRef), jornada: jornadaRef, extra, demora:0, salTemprana:0 };
-  }
-
-  // Horario de referencia efectivo del día (feriado y sábado acortan la salida)
-  const effectiveCfg = esFeriado
-    ? { entrada: cfg.entrada, salida: dayType?.salida || "14:00" }
-    : esSabado
-    ? { entrada: cfg.entrada, salida: "13:00" }
-    : cfg;
-
-  // ── Operarios ──
-  // Sábados y domingos no acumulan horas extra.
-  // Los FERIADOS sí: la salida reducida (ej. 14:00) existe para que irse a esa
-  // hora no cuente como retiro anticipado, y lo trabajado después son extras.
-  const sinExtra = esOperario && (esSabado || esDomingo);
-
-  const entRef = parseTimeVal(effectiveCfg.entrada);
-  const salRef = parseTimeVal(effectiveCfg.salida);
-  const jornada = salRef - entRef;
-  let extra = null;
-  if (!sinExtra) {
-    // Operarios: horas extra desde 06:00 am como mínimo
-    // Administrativos: horas extra desde su hora de entrada configurada (no antes)
-    const limiteEntrada = esOperario ? OPERARIO_EXTRA_FROM : entRef;
-    const entEfectiva   = Math.max(entMin, limiteEntrada);
-    const adelanto      = Math.max(0, entRef - entEfectiva); // siempre 0 con este límite
-    const extension     = Math.max(0, salMin - salRef);
-    const total         = adelanto + extension;
-    if (total > 0) extra = total;
-  }
-  if (extraManual !== undefined) extra = extraManual; // edición manual pisa el cálculo
-  const demora      = Math.max(0, entMin - entRef);
-  const salTemprana = Math.max(0, salRef - salMin);
-  const entDentro   = Math.max(entMin, entRef);
-  const salDentro   = Math.min(salMin, salRef);
-  const trabajado   = Math.max(0, salDentro - entDentro);
-  return { trabajado, jornada, extra, demora, salTemprana };
-}
-
-function detectSchedule(recs) {
-  const ents=recs.map(r=>r.entrada?parseTimeVal(r.entrada):null).filter(v=>v!=null).sort((a,b)=>a-b);
-  const sals=recs.map(r=>r.salida?parseTimeVal(r.salida):null).filter(v=>v!=null).sort((a,b)=>a-b);
-  if (!ents.length) return null;
-  return { entrada:minsToHHMM(ents[Math.floor(ents.length/2)]), salida:sals.length?minsToHHMM(sals[Math.floor(sals.length/2)]):"16:30" };
-}
-
-const cap = s => s ? s.charAt(0).toUpperCase()+s.slice(1).toLowerCase() : s;
-
-const COL = {
-  bg:"#f5f6f8", surface:"#ffffff", border:"#e8ecf1", border2:"#d4dbe4",
-  text:"#1e2a38", textSub:"#5a6a7a", textFaint:"#96a3b0",
-  accent:"#3d6b9e", accentBg:"#edf2f9", accentSoft:"#dce8f5",
-};
-const SANS = "'DM Sans', system-ui, sans-serif";
-const MONO = "'DM Mono', 'Courier New', monospace";
-
-/* ─── Inputs estables (definidos a nivel módulo para no perder el foco) ─────── */
-const INPUT_STYLE = {
-  border:`1px solid ${COL.border2}`, borderRadius:8, outline:"none",
-  background:"#fff", color:COL.text,
 };
 
 function FieldInput({ label, prefix="$", note="", value, onChange }) {
@@ -1029,6 +836,7 @@ function AppMain({ session }) {
   const liqSyncTimer  = useRef(null);
   const liqParamsRef  = useRef(liqParams);
   const liqPendingRef = useRef({});   // { empNo: true } upserts sin confirmar
+  const empSummaryRef = useRef([]);  // último empSummary calculado (para snapshots)
   const liqReadyRef   = useRef(!SB_URL || !SB_KEY);
 
   const flushLiqPending = useCallback(async () => {
@@ -1154,16 +962,17 @@ function AppMain({ session }) {
         const store = {};
         for (const row of (liqRows || [])) {
           const per = row.periodo;
-          if (!store[per]) store[per] = { datos:{}, estados:{} };
-          store[per].datos[String(row.emp_no)]   = row.datos;
-          store[per].estados[String(row.emp_no)] = row.estado || "borrador";
+          if (!store[per]) store[per] = { datos:{}, estados:{}, snapshots:{} };
+          store[per].datos[String(row.emp_no)]     = row.datos;
+          store[per].estados[String(row.emp_no)]   = row.estado || "borrador";
+          store[per].snapshots[String(row.emp_no)] = row.snapshot || null;
         }
         // Fallback pre-migración: si la tabla nueva está vacía pero
         // liq_params tiene datos, se toman como el período vigente y se
         // suben a la tabla nueva de una (auto-migración).
         if (!Object.keys(store).length && legacyLiq?.length) {
           const per = String(legacyLiq[0]?.datos?.desde || new Date().toISOString()).slice(0,7);
-          store[per] = { datos:{}, estados:{} };
+          store[per] = { datos:{}, estados:{}, snapshots:{} };
           for (const row of legacyLiq) {
             store[per].datos[String(row.emp_no)]   = row.datos;
             store[per].estados[String(row.emp_no)] = "borrador";
@@ -1387,11 +1196,11 @@ function AppMain({ session }) {
   const cambiarPeriodo = useCallback((per) => {
     if (!per || per === liqPeriodoRef.current) return;
     if (liqPeriodoRef.current) {
-      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{} };
+      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{}, snapshots:{} };
       cur.datos = { ...liqParamsRef.current };
       liqStoreRef.current[liqPeriodoRef.current] = cur;
     }
-    const target = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    const target = liqStoreRef.current[per] || { datos:{}, estados:{}, snapshots:{} };
     liqStoreRef.current[per] = target;
     liqPeriodoRef.current = per;
     prevLiqRef.current = JSON.parse(JSON.stringify(target.datos));
@@ -1408,15 +1217,24 @@ function AppMain({ session }) {
     if (!per) return;
     if (!confirm(`¿Cerrar el período ${per}? Las liquidaciones quedan en solo lectura. Podés reabrirlo si hace falta corregir algo.`)) return;
     const datos = liqParamsRef.current;
+    // Snapshot: se congela el cálculo completo de cada empleado con los
+    // registros de ESTE momento. Aunque después se reimporte asistencia
+    // vieja, el período cerrado muestra y exporta estos importes exactos.
+    const snaps = {};
     const rows = Object.entries(datos)
       .filter(([k,d]) => d && !isNaN(parseInt(k)))
-      .map(([k,d]) => ({ emp_no: parseInt(k), periodo: per, datos: d, estado: "cerrada", cerrada_at: new Date().toISOString() }));
+      .map(([k,d]) => {
+        const n = parseInt(k);
+        const calcs = empSummaryRef.current.find(s=>s.emp.empNo===n)?.calcs || [];
+        snaps[k] = snapshotLiquidacion(calcularLiquidacion(d, calcs));
+        return { emp_no: n, periodo: per, datos: d, estado: "cerrada", snapshot: snaps[k], cerrada_at: new Date().toISOString() };
+      });
     if (!rows.length) return;
     const ok = await sbUpsert("liquidaciones", rows, "emp_no,periodo");
     if (!ok) { alert("No se pudo cerrar el período (falló el guardado). Revisá la conexión e intentá de nuevo."); return; }
-    const st = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    const st = liqStoreRef.current[per] || { datos:{}, estados:{}, snapshots:{} };
     st.datos = { ...datos };
-    for (const [k] of rows.map(r=>[String(r.emp_no)])) st.estados[k] = "cerrada";
+    for (const r of rows) { st.estados[String(r.emp_no)] = "cerrada"; st.snapshots[String(r.emp_no)] = snaps[String(r.emp_no)]; }
     liqStoreRef.current[per] = st;
     setLiqCerrado(true);
   }, []);
@@ -1428,12 +1246,13 @@ function AppMain({ session }) {
     const datos = liqParamsRef.current;
     const rows = Object.entries(datos)
       .filter(([k,d]) => d && !isNaN(parseInt(k)))
-      .map(([k,d]) => ({ emp_no: parseInt(k), periodo: per, datos: d, estado: "borrador", cerrada_at: null }));
+      .map(([k,d]) => ({ emp_no: parseInt(k), periodo: per, datos: d, estado: "borrador", snapshot: null, cerrada_at: null }));
     if (!rows.length) return;
     const ok = await sbUpsert("liquidaciones", rows, "emp_no,periodo");
     if (!ok) { alert("No se pudo reabrir el período (falló el guardado)."); return; }
-    const st = liqStoreRef.current[per] || { datos:{}, estados:{} };
+    const st = liqStoreRef.current[per] || { datos:{}, estados:{}, snapshots:{} };
     for (const k of Object.keys(st.estados)) st.estados[k] = "borrador";
+    st.snapshots = {};
     liqStoreRef.current[per] = st;
     setLiqCerrado(false);
   }, []);
@@ -1470,11 +1289,11 @@ function AppMain({ session }) {
     }
     // guardar lo visible antes de cambiar
     if (liqPeriodoRef.current) {
-      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{} };
+      const cur = liqStoreRef.current[liqPeriodoRef.current] || { datos:{}, estados:{}, snapshots:{} };
       cur.datos = { ...base };
       liqStoreRef.current[liqPeriodoRef.current] = cur;
     }
-    liqStoreRef.current[perKey] = { datos: next, estados: {} };
+    liqStoreRef.current[perKey] = { datos: next, estados: {}, snapshots: {} };
     setLiqPeriodos(p => (p.includes(perKey) ? p : [...p, perKey]).sort().reverse());
     liqPeriodoRef.current = perKey;
     prevLiqRef.current = {};      // todo distinto → el effect sube todas las filas nuevas
@@ -1549,6 +1368,8 @@ function AppMain({ session }) {
     const peorDemora=demoraDias.reduce((m,r)=>Math.max(m,r.demora),0);
     return{emp,calcs,dias:trabajados.length,totalMin,demoraDias:demoraDias.length,totalDemora,stDias:stDias.length,peorDemora};
   }).filter(s=>s.dias>0);
+  // Referencia viva para cerrarPeriodo (useCallback sin deps)
+  empSummaryRef.current = empSummary;
 
   const S = {
     root:{fontFamily:SANS,background:COL.bg,minHeight:"100vh",color:COL.text},
@@ -3090,82 +2911,31 @@ function AppMain({ session }) {
               const p = getP(emp.empNo);
               if (!p.sueldoBasico) return null;
 
-              const sueldoBasico  = parseFloat(p.sueldoBasico  || 0);
-              const valorHoraExt  = parseFloat(p.valorHoraExt  || 0);
-              const valorDia      = parseFloat(p.valorDia      || 0);
-              const valorHora     = parseFloat(p.valorHora     || 0);
-              const valorDiaFinde = parseFloat(p.valorDiaFinde || 0);
-              const adelanto      = (Array.isArray(p.adelantos)
-                ? p.adelantos.reduce((s,a)=>s+(parseFloat(a.monto)||0),0)
-                : parseFloat(p.adelanto || 0));
-              const feriados      = parseFloat(p.feriados      || 0);
-              const sac           = parseFloat(p.sac           || 0);
-              const vacaciones    = parseFloat(p.vacaciones    || 0);
-
-              const desde = mesDesde || p.desde || "";
-              const hasta = mesHasta || p.hasta || "";
-
-              const empCalcs = (empSummary.find(s=>s.emp.empNo===emp.empNo)?.calcs || [])
-                .filter(r => (!desde||r.fecha>=desde) && (!hasta||r.fecha<=hasta));
-
-              const totalExtraMin   = empCalcs.reduce((s,r)=>s+(r.extra||0),0);
-              const recuR           = calcRecuperacion(empCalcs);
-              const totalExtraNetoMin = Math.max(0, totalExtraMin - recuR.recuperado);
-              const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
-                ? parseFloat(p.hsExtraRelojManual) : null;
-              const horasExtra      = (hsRelojOverride !== null ? Math.round(hsRelojOverride*60) : totalExtraNetoMin) / 60;
-              const fraccionesDem   = fraccionesDemoraCalc(empCalcs);
-              const fraccionesSt    = fraccionesSalTempCalc(empCalcs.filter(r=>!recuR.saldados.has(r.id)));
-
-              const allFindeInRange = empCalcs.filter(r=>{const d=new Date(r.fecha+"T12:00:00").getDay();return d===0||d===6;});
-              const findeSel        = new Set(p.findeSel || allFindeInRange.map(r=>r.fecha));
-              const diasFinde       = findeSel.size;
-
-              const horasExtraManualHs  = parseFloat(p.horasExtraManualHs  || 0);
-              const horasExtraManualImp = parseFloat(p.horasExtraManualImp || 0);
-              const importeExtraManual  = horasExtraManualImp > 0
-                ? horasExtraManualImp
-                : horasExtraManualHs * valorHoraExt;
-
-              const ovr = (v) => v !== undefined && v !== "" ? parseFloat(v) : null;
-              const importeExtras    = (ovr(p.impExtrasManual)     ?? valorHoraExt * horasExtra) + importeExtraManual;
-              const importeFeriados  =  ovr(p.impFeriadosManual)   ?? valorDia      * feriados;
-              const importeVacacion  =  ovr(p.impVacacionesManual) ?? valorDia      * vacaciones;
-              const importeFinde     =  ovr(p.impFindeManual)      ?? valorDiaFinde * diasFinde;
-              const premioIndividual  = parseFloat(p.premioIndividual  || 0);
-              const premioArea        = parseFloat(p.premioArea        || 0);
-              const premioPresentismo = parseFloat(p.premioPresentismo || 0);
-              const monotributo       = parseFloat(p.monotributo       || 0);
-              const totalAdicionales = importeExtras + importeFeriados + importeVacacion + importeFinde + premioIndividual + premioArea + premioPresentismo + monotributo; // SAC va en su propia columna
-
-              const descDemorasCalc = (valorHora / 4) * fraccionesDem;
-              const descSalTempCalc = (valorHora / 4) * fraccionesSt;
-              const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
-                ? parseFloat(p.descDemorasManual) : null;
-              const descSalTempManual = p.descSalTempManual !== undefined && p.descSalTempManual !== ""
-                ? parseFloat(p.descSalTempManual) : null;
-              const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
-              const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
-              const ausencias     = parseFloat(p.ausencias || 0);
-              const descAusencias = valorDia * ausencias;
-              const totalDesc        = descDemoras + descSalTemp + descAusencias;
-              const subtotal         = sueldoBasico + totalAdicionales + sac - totalDesc - adelanto;
-              const reciboA          = parseFloat(p.reciboA || 0);
-              const enMano           = subtotal - reciboA;      
+              const empCalcs = empSummary.find(s=>s.emp.empNo===emp.empNo)?.calcs || [];
+              // Si el mes que se mira corresponde a un período CERRADO con
+              // snapshot, los importes salen congelados de ahí. Si no, se
+              // calculan en vivo con la misma función que el tab Liquidación.
+              const perMes = resumenMes || liqPeriodoSel;
+              const stMes  = perMes ? liqStoreRef.current[perMes] : null;
+              const estsMes = stMes ? Object.values(stMes.estados) : [];
+              const mesCerrado = estsMes.length > 0 && estsMes.every(e => e === "cerrada");
+              const snap = mesCerrado ? (stMes.snapshots?.[String(emp.empNo)] || null) : null;
+              const d = snap || calcularLiquidacion(p, empCalcs, { desde: mesDesde, hasta: mesHasta });
+              const reciboA = parseFloat(p.reciboA || 0);
 
               return {
                 emp,
                 nombre:    p.nombreDisplay || cap(emp.nombre),
                 area:      p.area || "—",
                 ingreso:   p.ingreso || emp.ingreso || "",
-                sueldoBasico,
-                totalAdicionales,
-                sac,
-                totalDesc,
-                adelanto,
-                subtotal,
+                sueldoBasico:     d.sueldoBasico,
+                totalAdicionales: d.totalAdicionales - d.sac, // SAC va en su propia columna
+                sac:              d.sac,
+                totalDesc:        d.totalDescuentos,
+                adelanto:         d.adelanto,
+                subtotal:         d.totalACobrar,
                 reciboA,
-                enMano,
+                enMano:           d.totalACobrar - reciboA,
               };
             })
             .filter(Boolean);
@@ -3346,137 +3116,36 @@ function AppMain({ session }) {
             }));
           };
 
-          // Date range filter
-          const desde  = p.desde || "";
-          const hasta  = p.hasta || "";
-          const rangeCalcs = selCalcs.filter(r =>
-            (!desde || r.fecha >= desde) && (!hasta || r.fecha <= hasta)
-          );
-
-          // Values from attendance data (filtered by range)
-          const diasTrabajados   = rangeCalcs.filter(r=>r.trabajado!=null&&r.trabajado>0).length;
-          const totalDemoraMin   = rangeCalcs.reduce((s,r)=>s+(r.demora||0),0);
-          const totalSalTempMin  = rangeCalcs.reduce((s,r)=>s+(r.salTemprana||0),0);
-          const totalExtraMin    = rangeCalcs.reduce((s,r)=>s+(r.extra||0),0);
-          // Recuperación de horas: la deuda cargada se descuenta de las extras
-          // posteriores (bloques de 30 min); solo se paga el neto.
-          const recu             = calcRecuperacion(rangeCalcs);
-          const totalExtraNetoMin= Math.max(0, totalExtraMin - recu.recuperado);
-          // Finde dates: all sat/sun in range (with or without record)
-          const allFindeInRange = (()=>{
-            if (!desde && !hasta && rangeCalcs.length === 0) return [];
-            // collect all sat/sun dates from range records + generate from date range
-            const fechasSet = new Set(rangeCalcs
-              .filter(r=>{ const d=new Date(r.fecha+"T12:00:00").getDay(); return d===0||d===6; })
-              .map(r=>r.fecha)
-            );
-            return [...fechasSet].sort();
-          })();
-          // Which ones RRHH checked (stored per employee in liqParams)
-          const findeSel = new Set(p.findeSel || allFindeInRange); // default: all pre-selected
-          const diasFinde = findeSel.size;
+          // ── Cálculo canónico (calculos.js) + snapshot si el período está cerrado ──
+          const dCalc = calcularLiquidacion(p, selCalcs);
+          const snapCerrado = (liqCerrado && liqPeriodoSel)
+            ? (liqStoreRef.current[liqPeriodoSel]?.snapshots?.[empKey] || null)
+            : null;
+          const d = snapCerrado ? { ...dCalc, ...snapCerrado } : dCalc;
+          const {
+            desde, hasta, diasTrabajados, totalDemoraMin, totalSalTempMin, totalExtraMin,
+            totalExtraNetoMin, allFindeInRange, diasFinde, fraccionesDemora, fraccionesSalTemp,
+            horasSalTemp, hsRelojOverride, extraMinFinal, horasExtraRelojDisplay, horasExtra, horasExtraDisplay,
+            sueldoBasico, valorDia, valorHora, valorHoraExt, valorDiaFinde,
+            adelantos, adelanto, feriados, sac, vacaciones, periodo, ingreso,
+            horasExtraManualHs, horasExtraManualImp, importeExtraManual, horasExtraManualDisplay,
+            descDemorasCalc, descSalTempCalc, descDemorasManual, descSalTempManual, descDemoras, descSalTemp,
+            ausencias, descAusencias, fraccionesDemoraDisp, fraccionesSalTempDisp,
+            importeSueldo, impExtrasCalc, impFeriadosCalc, impVacacionesCalc, impFindeCalc,
+            impExtrasManual, impFeriadosManual, impVacacionesManual, impFindeManual,
+            impExtrasReloj, importeFeriados, importeVacaciones, importeFinde, importeExtras,
+            premioIndividual, premioArea, premioPresentismo, monotributo,
+            totalAdicionales, totalDescuentos, subtotal, totalACobrar,
+          } = d;
+          const rangeCalcs = dCalc.rangeCalcs;   // siempre en vivo (informativo)
+          const recu       = { ...d.recu, saldados: new Set(d.recu.saldados) };
+          const findeSel   = new Set(d.findeSel);
           const toggleFinde = (fecha) => {
             const cur = new Set(p.findeSel || allFindeInRange);
             cur.has(fecha) ? cur.delete(fecha) : cur.add(fecha);
             setP("findeSel", [...cur]);
           };
           const DIAS_CORTO = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-
-          // Fracciones de demora con tolerancia POR DÍA
-          const fraccionesDemora = fraccionesDemoraCalc(rangeCalcs);
-          // Retiros anticipados: misma lógica que tardanzas (fracciones de 15 min)
-          // Retiros anticipados: misma lógica que tardanzas (fracciones de 15 min),
-          // pero los retiros con recupero de horas YA SALDADO no se descuentan en plata
-          // (si la deuda sigue pendiente, el descuento se mantiene).
-          const fraccionesSalTemp = fraccionesSalTempCalc(rangeCalcs.filter(r=>!recu.saldados.has(r.id)));
-          // (se mantiene el total en horas solo por compatibilidad de display)
-          const horasSalTemp      = parseFloat((totalSalTempMin / 60).toFixed(2));
-          // Horas extra — decimal para cálculos, HH:MM para mostrar.
-          // Si RRHH cargó una corrección manual (hsExtraRelojManual), ESA manda.
-          const hsRelojOverride = p.hsExtraRelojManual !== undefined && p.hsExtraRelojManual !== ""
-            ? parseFloat(p.hsExtraRelojManual) : null;
-          const extraMinFinal   = hsRelojOverride !== null ? Math.round(hsRelojOverride * 60) : totalExtraNetoMin;
-          const horasExtraRelojDisplay = minsToDisplay(totalExtraMin); // lo que marcó el reloj (bruto)
-          const horasExtra        = parseFloat((extraMinFinal / 60).toFixed(10)); // full precision for math
-          const horasExtraDisplay = minsToDisplay(extraMinFinal); // ej: 38h26
-
-          // Manual inputs (stored per employee)
-          const sueldoBasico  = parseFloat(p.sueldoBasico  || 0);
-          const valorDia      = parseFloat(p.valorDia      || 0);
-          const valorHora     = parseFloat(p.valorHora     || 0);
-          const valorHoraExt  = parseFloat(p.valorHoraExt  || 0);
-          const valorDiaFinde = parseFloat(p.valorDiaFinde || 0);
-          // Adelantos: lista de líneas {desc, monto}. Compat: si existe el viejo p.adelanto numérico y no hay lista, lo migra.
-          const adelantos = Array.isArray(p.adelantos)
-            ? p.adelantos
-            : (parseFloat(p.adelanto||0) > 0 ? [{desc:"Adelanto", monto:String(parseFloat(p.adelanto))}] : []);
-          const adelanto      = adelantos.reduce((s,a)=>s+(parseFloat(a.monto)||0),0);
-          const feriados      = parseFloat(p.feriados      || 0);
-          const sac           = parseFloat(p.sac           || 0);
-          const vacaciones    = parseFloat(p.vacaciones    || 0);
-          const periodo       = p.periodo || "";
-          const ingreso       = p.ingreso || "";
-
-          // Horas extra manuales (fuera del reloj) — se suman a las del reloj
-          const horasExtraManualHs  = parseFloat(p.horasExtraManualHs  || 0); // en horas
-          const horasExtraManualImp = parseFloat(p.horasExtraManualImp || 0); // en importe
-          // Si pusieron importe directo, toma ese; si pusieron horas, calcula importe
-          const importeExtraManual  = horasExtraManualImp > 0
-            ? horasExtraManualImp
-            : horasExtraManualHs * valorHoraExt;
-          const horasExtraManualDisplay = horasExtraManualHs > 0
-            ? minsToDisplay(Math.round(horasExtraManualHs*60))
-            : horasExtraManualImp > 0 && valorHoraExt > 0
-            ? minsToDisplay(Math.round((horasExtraManualImp/valorHoraExt)*60))
-            : "—";
-
-          // Descuentos — pueden sobreescribirse manualmente
-          const descDemorasCalc   = (valorHora / 4) * fraccionesDemora;
-          const descSalTempCalc   = (valorHora / 4) * fraccionesSalTemp;
-          const descDemorasManual = p.descDemorasManual !== undefined && p.descDemorasManual !== ""
-            ? parseFloat(p.descDemorasManual)
-            : null;
-          const descSalTempManual = p.descSalTempManual !== undefined && p.descSalTempManual !== ""
-            ? parseFloat(p.descSalTempManual)
-            : null;
-          const descDemoras = descDemorasManual !== null ? descDemorasManual : descDemorasCalc;
-          const descSalTemp = descSalTempManual !== null ? descSalTempManual : descSalTempCalc;
-
-          // Ausencias (días de falta) — se descuenta valor día × cantidad de días
-          const ausencias     = parseFloat(p.ausencias || 0);
-          const descAusencias = valorDia * ausencias;
-
-          // Cantidades a mostrar: si el descuento se borró (importe 0), no mostrar unidades
-          const fraccionesDemoraDisp = descDemoras > 0 ? fraccionesDemora  : "—";
-          const fraccionesSalTempDisp= descSalTemp > 0 ? fraccionesSalTemp : "—";
-
-          // Calculations — básico manda, adicionales son extras sobre él
-          const importeSueldo    = sueldoBasico;
-          // Importes calculados de cada adicional + override manual por importe.
-          // Vacío = usa el calculado; con valor cargado, ese importe manda.
-          const ovr = (v) => v !== undefined && v !== "" ? parseFloat(v) : null;
-          const impExtrasCalc     = valorHoraExt * horasExtra;
-          const impFeriadosCalc   = valorDia     * feriados;
-          const impVacacionesCalc = valorDia     * vacaciones;
-          const impFindeCalc      = valorDiaFinde * diasFinde;
-          const impExtrasManual     = ovr(p.impExtrasManual);
-          const impFeriadosManual   = ovr(p.impFeriadosManual);
-          const impVacacionesManual = ovr(p.impVacacionesManual);
-          const impFindeManual      = ovr(p.impFindeManual);
-          const impExtrasReloj   = impExtrasManual     !== null ? impExtrasManual     : impExtrasCalc;
-          const importeFeriados  = impFeriadosManual   !== null ? impFeriadosManual   : impFeriadosCalc;
-          const importeVacaciones= impVacacionesManual !== null ? impVacacionesManual : impVacacionesCalc;
-          const importeFinde     = impFindeManual      !== null ? impFindeManual      : impFindeCalc;
-          const importeExtras    = impExtrasReloj + importeExtraManual;
-          // Premios (importes directos)
-          const premioIndividual  = parseFloat(p.premioIndividual  || 0);
-          const premioArea        = parseFloat(p.premioArea        || 0);
-          const premioPresentismo = parseFloat(p.premioPresentismo || 0);
-          const monotributo       = parseFloat(p.monotributo       || 0);
-          const totalAdicionales = importeExtras + importeFeriados + sac + importeVacaciones + importeFinde + premioIndividual + premioArea + premioPresentismo + monotributo;
-          const totalDescuentos  = descDemoras + descSalTemp + descAusencias;
-          const subtotal         = importeSueldo + totalAdicionales;
-          const totalACobrar     = subtotal - totalDescuentos - adelanto;
 
           const fmt = (n) => n === 0 ? "—" : `$${Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
           const fmtN = (n) => n === 0 ? "—" : Number(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
