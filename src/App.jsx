@@ -2451,15 +2451,16 @@ function AppMain({ session }) {
 
           // Deriva valor día, hora, feriado y sábado a partir del sueldo bruto.
           //   día      = sueldo / 22
-          //   hora     = día / 8
+          //   hora     = día / divisor (8 por defecto, editable por empleado)
           //   feriado  = sueldo / 22  (igual que el día de falta)
           //   sábado   = sueldo / 22  (día completo)
           //   hora ext = hora * 1.5
-          const derivar = (basico) => {
+          const derivar = (basico, divisor) => {
             const b = parseFloat(basico) || 0;
+            const div = parseFloat(divisor) || 8;
             if (!b) return { valorDia:"", valorHora:"", valorDiaFinde:"", valorHoraExt:"" };
             const valorDia  = b / 22;
-            const valorHora = valorDia / 8;
+            const valorHora = valorDia / div;
             return {
               valorDia:      valorDia.toFixed(2),
               valorHora:     valorHora.toFixed(2),
@@ -2701,6 +2702,7 @@ function AppMain({ session }) {
                                 setCircularEdit(emp.empNo);
                                 setCircularDraft({
                                   sueldoBasico:  p.sueldoBasico  ||"",
+                                  divisorHora:   p.divisorHora   ||"8",
                                   valorDia:      p.valorDia      ||"",
                                   valorHora:     p.valorHora     ||"",
                                   valorHoraExt:  p.valorHoraExt  ||"",
@@ -2752,7 +2754,7 @@ function AppMain({ session }) {
                               ? <input type="number" min="0" step="any" value={circularDraft.sueldoBasico||""}
                                   onChange={e=>{
                                     const v = e.target.value;
-                                    setCircularDraft(p=>({...p, sueldoBasico:v, ...derivar(v)}));
+                                    setCircularDraft(p=>({...p, sueldoBasico:v, ...derivar(v, p.divisorHora)}));
                                   }}
                                   placeholder="0"
                                   style={{...S.sInput,width:"100%",padding:"6px 10px",fontFamily:MONO,fontSize:14,fontWeight:600}}/>
@@ -2782,11 +2784,11 @@ function AppMain({ session }) {
                             <tbody>
                               {[
                                 {label:"Valor a descontar por día de falta", field:"valorDia",      note:"sueldo / 22"},
-                                {label:"Valor hora de referencia",            field:"valorHora",     note:"día / 8 · por hora"},
+                                {label:"Valor hora de referencia",            field:"valorHora",     note:`día / ${p.divisorHora||8} · por hora`, divisor:true},
                                 {label:"Feriados trabajados",                 field:"valorDia",      note:`sueldo / 22 · hasta las ${emp.salida||"16:30"} hs`},
                                 {label:"Sábados",                             field:"valorDiaFinde", note:"sueldo / 22 · 08 a 14 hs"},
                                 {label:"Horas extras",                        field:"valorHoraExt",  note:`hora × 1.5 · a partir de las ${emp.salida||"16:30"} hs`},
-                              ].map(({label,field,note,readOnly},idx)=>(
+                              ].map(({label,field,note,readOnly,divisor},idx)=>(
                                 <tr key={idx} style={{background:idx%2===0?"#fff":"#fafbfc",borderBottom:`1px solid ${COL.border}`}}>
                                   <td style={{...S.td,textAlign:"left",color:COL.textSub,fontSize:12,width:"45%"}}>{label}</td>
                                   <td style={{...S.td,fontFamily:MONO,fontSize:12,width:30,color:COL.textFaint}}>$</td>
@@ -2803,7 +2805,28 @@ function AppMain({ session }) {
                                         </span>
                                     }
                                   </td>
-                                  <td style={{...S.td,textAlign:"left",fontSize:11,color:COL.textFaint}}>{note}</td>
+                                  <td style={{...S.td,textAlign:"left",fontSize:11,color:COL.textFaint}}>
+                                    {isEd && divisor
+                                      ? <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                                          día /
+                                          <input type="number" min="1" step="any"
+                                            value={circularDraft.divisorHora||"8"}
+                                            onChange={e=>{
+                                              const d = e.target.value;
+                                              setCircularDraft(pr=>{
+                                                const dia = parseFloat(pr.valorDia)||0;
+                                                const div = parseFloat(d)||0;
+                                                if (!dia || !div) return {...pr, divisorHora:d};
+                                                const vh = dia/div;
+                                                return {...pr, divisorHora:d, valorHora:vh.toFixed(2), valorHoraExt:(vh*1.5).toFixed(2)};
+                                              });
+                                            }}
+                                            style={{...S.sInput,width:46,padding:"3px 6px",fontFamily:MONO,fontSize:12,textAlign:"center"}}
+                                          />
+                                          · por hora
+                                        </span>
+                                      : note}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
