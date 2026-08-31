@@ -154,7 +154,10 @@ function exportLiqPDF(d) {
     importeVacaciones, totalAdicionales, subtotal, fraccionesDemora, valorHora,
     ausencias, descAusencias, premioIndividual, premioArea, premioPresentismo, monotributo,
     descDemoras, fraccionesSalTemp, descSalTemp, totalDescuentos, adelanto, adelantos,
-    totalACobrar, diasTrabajados, nombreDisplay, fmt } = d;
+    totalACobrar, diasTrabajados, nombreDisplay, fmt, reciboA } = d;
+
+  const reciboANum = parseFloat(reciboA) || 0;
+  const enMano     = totalACobrar - reciboANum;
 
   const nombre = selEmp.nombre.toUpperCase();
   const today  = new Date().toLocaleDateString("es-AR");
@@ -264,6 +267,20 @@ function exportLiqPDF(d) {
         </tbody>
       </table>
 
+      ${totalACobrar>0?`
+      <div style="margin-top:14px;border:1px solid #ddd;background:#f7f5ef">
+        <div style="padding:6px 12px;font-size:9.5px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#fff;background:#1a1a1a">Forma de pago</div>
+        <table>
+          <tr style="border-bottom:1px solid #ddd">
+            <td style="padding:7px 12px;font-size:11px;color:#333">Recibo A <span style="color:#888;font-size:10px">(transferencia)</span></td>
+            <td style="padding:7px 12px;text-align:right;font-size:11.5px;font-weight:700;color:#1a3a6b">${reciboANum>0?fmt(reciboANum):"—"}</td>
+          </tr>
+          <tr>
+            <td style="padding:7px 12px;font-size:11px;font-weight:700;color:#1a1a1a">A pagar en mano <span style="color:#888;font-size:10px;font-weight:400">(efectivo)</span></td>
+            <td style="padding:7px 12px;text-align:right;font-size:12px;font-weight:700;color:${enMano<0?"#c53030":"#0f766e"}">${fmt(enMano)}</td>
+          </tr>
+        </table>
+      </div>`:""}
 
     </div>
     </body></html>`;
@@ -3269,7 +3286,7 @@ function AppMain({ session }) {
                   Nuevo período
                 </button>
                 {selEmp&&(
-                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,premioIndividual,premioArea,premioPresentismo,monotributo,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,ausencias,descAusencias,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt})}
+                  <button onClick={()=>exportLiqPDF({selEmp,periodo,ingreso,desde,hasta,importeSueldo,diasFinde,valorDiaFinde,importeFinde,horasExtra,horasExtraDisplay,valorHoraExt,importeExtras,impExtrasReloj,importeExtraManual,horasExtraManualDisplay,feriados,valorDia,importeFeriados,sac,vacaciones,premioIndividual,premioArea,premioPresentismo,monotributo,importeVacaciones,totalAdicionales,subtotal,fraccionesDemora,valorHora,descDemoras,fraccionesSalTemp,descSalTemp,ausencias,descAusencias,totalDescuentos,adelanto,adelantos,totalACobrar,diasTrabajados,nombreDisplay:p.nombreDisplay||(cap(selEmp.nombre)),fmt,reciboA:p.reciboA})}
                     style={{alignSelf:"flex-end",background:"#276749",color:"#fff",border:"none",borderRadius:8,padding:"9px 20px",cursor:"pointer",fontFamily:SANS,fontWeight:600,fontSize:13,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><path d="M6 14h12v8H6z"/></svg>
                     Exportar PDF
