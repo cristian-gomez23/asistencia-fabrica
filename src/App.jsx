@@ -224,7 +224,6 @@ function exportLiqPDF(d) {
       <div class="client-box">
         <div class="cc"><div class="cf">Empleado</div><div class="cv">${nombreDisplay}</div></div>
         <div class="cc"><div class="cf">Fecha de ingreso</div><div class="cv">${ingreso||"—"}</div></div>
-        <div class="cc"><div class="cf">Horario</div><div class="cv">${selEmp.entrada} – ${selEmp.salida}</div></div>
       </div>
 
       <table>
