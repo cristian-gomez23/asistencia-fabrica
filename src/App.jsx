@@ -271,11 +271,11 @@ function exportLiqPDF(d) {
         <div style="padding:6px 12px;font-size:9.5px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#fff;background:#1a1a1a">Forma de pago</div>
         <table>
           <tr style="border-bottom:1px solid #ddd">
-            <td style="padding:7px 12px;font-size:11px;color:#333">Recibo A <span style="color:#888;font-size:10px">(transferencia)</span></td>
+            <td style="padding:7px 12px;font-size:11px;color:#333">Transferencia</td>
             <td style="padding:7px 12px;text-align:right;font-size:11.5px;font-weight:700;color:#1a3a6b">${reciboANum>0?fmt(reciboANum):"—"}</td>
           </tr>
           <tr>
-            <td style="padding:7px 12px;font-size:11px;font-weight:700;color:#1a1a1a">A pagar en mano <span style="color:#888;font-size:10px;font-weight:400">(efectivo)</span></td>
+            <td style="padding:7px 12px;font-size:11px;font-weight:700;color:#1a1a1a">Efectivo</td>
             <td style="padding:7px 12px;text-align:right;font-size:12px;font-weight:700;color:${enMano<0?"#c53030":"#0f766e"}">${fmt(enMano)}</td>
           </tr>
         </table>
@@ -3023,7 +3023,7 @@ function AppMain({ session }) {
                       ["empNo","N°"],["nombre","Empleado"],["area","Área"],["ingreso","Ingreso"],
                       ["sueldoBasico","Sueldo básico"],["totalAdicionales","Adicionales"],["sac","SAC"],
                       ["totalDesc","Desc. hs/días"],["adelanto","Adelantos"],["subtotal","Subtotal"],
-                      ["reciboA","Recibo A"],["enMano","A pagar en mano"],
+                      ["reciboA","Transferencia"],["enMano","Efectivo"],
                     ];
                     const rows = filas.map(f=>({
                       empNo:f.emp.empNo, nombre:f.nombre, area:f.area==="—"?"":f.area,
@@ -3103,8 +3103,8 @@ function AppMain({ session }) {
                         <th style={{...thR,color:"#c53030"}}>Desc. hs/días</th>
                         <th style={{...thR,color:"#b45309"}}>Adelantos</th>
                         <th style={{...thR,color:"#276749",fontWeight:700}}>Subtotal</th>
-                        <th style={{...thR,color:"#1d4ed8"}}>Recibo A</th>
-                        <th style={{...thR,color:"#0f766e"}}>A pagar en mano</th>
+                        <th style={{...thR,color:"#1d4ed8"}}>Transferencia</th>
+                        <th style={{...thR,color:"#0f766e"}}>Efectivo</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3643,7 +3643,7 @@ function AppMain({ session }) {
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                           <label style={{fontSize:12,color:COL.textSub,minWidth:200,flexShrink:0}}>
-                            Recibo A <span style={{marginLeft:6,fontSize:10,color:COL.textFaint}}>(transferencia)</span>
+                            Transferencia
                           </label>
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             <span style={{fontSize:12,color:COL.textFaint}}>$</span>
@@ -3656,13 +3656,13 @@ function AppMain({ session }) {
                           </div>
                         </div>
                         <div style={{fontSize:12,color:COL.textSub,display:"flex",justifyContent:"space-between",maxWidth:364}}>
-                          <span>A pagar en mano (efectivo):</span>
+                          <span>Efectivo:</span>
                           <b style={{fontFamily:MONO,color:(totalACobrar-(parseFloat(p.reciboA)||0))<0?"#c53030":"#0f766e"}}>
                             ${Math.round(totalACobrar-(parseFloat(p.reciboA)||0)).toLocaleString("es-AR")}
                           </b>
                         </div>
                         <div style={{marginTop:4,fontSize:10,color:COL.textFaint}}>
-                          En mano = Total a cobrar − Recibo A. Ambos se muestran en la pestaña Resumen.
+                          Efectivo = Total a cobrar − Transferencia. Ambos se muestran en la pestaña Resumen.
                         </div>
                       </div>
 
