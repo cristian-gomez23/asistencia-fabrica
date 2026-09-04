@@ -381,6 +381,172 @@ function exportXLSX(rows, headers, sheetName, fileName) {
   XLSX.writeFile(wb, fileName);
 }
 
+/* ─── Estilos compartidos para exports con formato (xlsx-js-style) ────────── */
+const $FMT2 = '"$"#,##0.00';
+const XST = {
+  title:    { font:{bold:true,sz:14,color:{rgb:"1A1A1A"}} },
+  meta:     { font:{sz:9,color:{rgb:"667085"}} },
+  section:  { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"1A1A1A"}} },
+  gold:     { font:{bold:true,sz:10,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"B08A2E"}} },
+  goldMoney:{ font:{bold:true,sz:12,color:{rgb:"FFFFFF"}}, fill:{fgColor:{rgb:"B08A2E"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  label:    { font:{sz:10,color:{rgb:"475467"}} },
+  labelB:   { font:{bold:true,sz:10,color:{rgb:"1A1A1A"}} },
+  value:    { font:{bold:true,sz:11,color:{rgb:"1A1A1A"}} },
+  money:    { font:{sz:10,color:{rgb:"1A3A6B"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  moneyB:   { font:{bold:true,sz:11,color:{rgb:"1A3A6B"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  moneyRed: { font:{sz:10,color:{rgb:"C53030"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  moneyRedB:{ font:{bold:true,sz:10,color:{rgb:"C53030"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  moneyGreen:{ font:{bold:true,sz:11,color:{rgb:"0F766E"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  sub:      { font:{bold:true,sz:10,color:{rgb:"1A1A1A"}}, fill:{fgColor:{rgb:"EFEFEF"}} },
+  subMoney: { font:{bold:true,sz:10,color:{rgb:"1A1A1A"}}, fill:{fgColor:{rgb:"EFEFEF"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  cant:     { font:{sz:9,color:{rgb:"667085"}}, alignment:{horizontal:"center"} },
+  note:     { font:{sz:9,italic:true,color:{rgb:"98A2B3"}} },
+  hl:       { font:{bold:true,sz:10,color:{rgb:"92400E"}}, fill:{fgColor:{rgb:"FEF3C7"}} },
+  hlMoney:  { font:{bold:true,sz:11,color:{rgb:"92400E"}}, fill:{fgColor:{rgb:"FEF3C7"}}, numFmt:$FMT2, alignment:{horizontal:"right"} },
+  hlCalc:   { font:{sz:10,color:{rgb:"92400E"}}, fill:{fgColor:{rgb:"FEF3C7"}} },
+};
+
+// Escribe un array de filas [[valor, estilo], ...] en una hoja nueva.
+// Cada fila es un array de celdas; celda = [valor, estiloXST] o null (vacía).
+function buildStyledSheet(rows, cols) {
+  const ws = {};
+  rows.forEach((row, r) => {
+    (row||[]).forEach((cell, c) => {
+      if (!cell) return;
+      const [v, s] = cell;
+      const isNum = typeof v === "number" && isFinite(v);
+      ws[XLSXS.utils.encode_cell({r,c})] = { v: isNum ? v : String(v), t: isNum ? "n" : "s", s: s || XST.label };
+    });
+  });
+  ws["!ref"]  = XLSXS.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rows.length-1,0),c:cols.length-1}});
+  ws["!cols"] = cols.map(wch=>({wch}));
+  return ws;
+}
+
+/* ─── Exportar circulares a Excel — una hoja por empleado ─────────────────── */
+function exportCircularesXLSX(emps, getP) {
+  const conDatos = emps.filter(e => getP(e.empNo).sueldoBasico);
+  if (!conDatos.length) { alert("No hay circulares con datos para exportar."); return; }
+
+  const today = new Date().toLocaleDateString("es-AR");
+  const wb = XLSXS.utils.book_new();
+
+  for (const emp of conDatos) {
+    const p = getP(emp.empNo);
+    const sueldo       = parseFloat(p.sueldoBasico)  || 0;
+    const divisor      = parseFloat(p.divisorHora)   || 8;
+    const valorDia     = parseFloat(p.valorDia)      || sueldo/22;
+    const valorHora    = parseFloat(p.valorHora)     || valorDia/divisor;
+    const valorHoraExt = parseFloat(p.valorHoraExt)  || valorHora*1.5;
+    const valorDiaFinde= parseFloat(p.valorDiaFinde) || sueldo/22;
+    const salida       = emp.salida  || "16:30";
+    const entrada      = emp.entrada || "06:00";
+    const nombre       = p.nombreDisplay || cap(emp.nombre);
+
+    const rows = [
+      [[`CIRCULAR — ${nombre.toUpperCase()}  (N°${emp.empNo})`, XST.title]],
+      [[`Área: ${p.area||"—"}   ·   Período circular: ${p.periodoCircular||"—"}   ·   Emitido: ${today}`, XST.meta]],
+      [],
+      [["DATOS GENERALES", XST.section],[null],[null],[null]],
+      [["Sueldo bruto", XST.label],[sueldo, XST.moneyB]],
+      [["Horario", XST.label],[`Lunes a Sábados ${entrada} a ${salida} hs`, XST.value]],
+      [["Fecha ingreso", XST.label],[p.ingreso ? new Date(p.ingreso+"T12:00:00").toLocaleDateString("es-AR") : "—", XST.value]],
+      [],
+      [["ADICIONALES Y DESCUENTOS", XST.section],["Importe", XST.section],["Cálculo", XST.section],[null]],
+      [["Valor a descontar por día de falta", XST.label],[valorDia, XST.money],["Sueldo / 22", XST.note]],
+      [["Valor hora de referencia", XST.hl],[valorHora, XST.hlMoney],[`Valor día / ${divisor} hs`, XST.hlCalc]],
+      [["Feriados trabajados", XST.label],[valorDia, XST.money],[`Sueldo / 22 · hasta las ${salida} hs`, XST.note]],
+      [["Sábados", XST.label],[valorDiaFinde, XST.money],["Sueldo / 22 · 08 a 14 hs", XST.note]],
+      [["Horas extras", XST.label],[valorHoraExt, XST.money],[`Valor hora × 1.5 · a partir de las ${salida} hs`, XST.note]],
+      [],
+      [["CÓMO SE CALCULA EL VALOR DE LA HORA", XST.gold],[null],[null],[null]],
+      [["1) Valor día = Sueldo bruto / 22", XST.labelB],[valorDia, XST.moneyB],[`= $${Math.round(sueldo).toLocaleString("es-AR")} / 22`, XST.note]],
+      [[`2) Valor hora = Valor día / ${divisor} hs de jornada`, XST.hl],[valorHora, XST.hlMoney],[`= $${valorDia.toLocaleString("es-AR",{maximumFractionDigits:2})} / ${divisor}`, XST.hlCalc]],
+      [["3) Hora extra = Valor hora × 1.5", XST.labelB],[valorHoraExt, XST.moneyB],[`= $${valorHora.toLocaleString("es-AR",{maximumFractionDigits:2})} × 1.5`, XST.note]],
+    ];
+    if (p.observaciones) {
+      rows.push([]);
+      rows.push([["OBSERVACIONES", XST.section],[null],[null],[null]]);
+      String(p.observaciones).split("\n").filter(Boolean).forEach(l=>rows.push([[`· ${l}`, XST.label]]));
+    }
+
+    const ws = buildStyledSheet(rows, [42, 16, 38, 6]);
+    XLSXS.utils.book_append_sheet(wb, ws, sheetNameSafe(`${emp.empNo} ${nombre}`));
+  }
+
+  const hoy = new Date().toISOString().slice(0,10);
+  XLSXS.writeFile(wb, `circulares_${hoy}.xlsx`);
+}
+
+/* ─── Exportar liquidaciones a Excel — una hoja por empleado ──────────────── */
+// datos: [{emp, p, d}] donde d = calcularLiquidacion(...) (+ snapshot si el período está cerrado)
+function exportLiqDetalleXLSX(datos, sufijo) {
+  if (!datos.length) { alert("No hay liquidaciones con datos para exportar."); return; }
+
+  const today = new Date().toLocaleDateString("es-AR");
+  const wb = XLSXS.utils.book_new();
+
+  for (const { emp, p, d } of datos) {
+    const nombre  = p.nombreDisplay || cap(emp.nombre);
+    const reciboA = parseFloat(p.reciboA) || 0;
+    const enMano  = d.totalACobrar - reciboA;
+    const divisor = parseFloat(p.divisorHora) || 8;
+    const money = (n, st) => n > 0 ? [n, st] : ["—", XST.cant];
+
+    const rows = [
+      [[`PLANILLA LIQUIDACIÓN SUELDOS — ${nombre.toUpperCase()}  (N°${emp.empNo})`, XST.title]],
+      [[`Período: ${d.periodo||"—"}   ·   ${d.desde||"inicio"} → ${d.hasta||"fin"}   ·   Ingreso: ${d.ingreso||"—"}   ·   Emitido: ${today}`, XST.meta]],
+      [],
+      [["Elemento / Descripción", XST.section],["Cantidad", XST.section],["Valor unit.", XST.section],["Importe", XST.section]],
+      [["SUELDO BÁSICO", XST.sub],[null],[null],[d.importeSueldo, XST.subMoney]],
+      [["ADICIONALES", XST.sub],[null],[null],[null]],
+    ];
+    const det = (label, cant, val, imp, redOrColor) => {
+      if (!(imp > 0)) return;
+      rows.push([[`   ${label}`, XST.label],[cant||"—", XST.cant],[val>0?val:"—", val>0?XST.money:XST.cant],[imp, redOrColor||XST.money]]);
+    };
+    det("Horas extra (reloj)",  d.horasExtraDisplay,       d.valorHoraExt, d.impExtrasReloj ?? d.valorHoraExt*d.horasExtra);
+    det("Horas extra (manual)", d.horasExtraManualDisplay, d.valorHoraExt, d.importeExtraManual);
+    det("Días finde/especiales",d.diasFinde,               d.valorDiaFinde,d.importeFinde);
+    det("Feriados",             d.feriados,                d.valorDia,     d.importeFeriados);
+    det("SAC",                  null,                      0,              d.sac);
+    det("Premio individual",    null, 0, d.premioIndividual);
+    det("Premio área",          null, 0, d.premioArea);
+    det("Premio presentismo",   null, 0, d.premioPresentismo);
+    det("Monotributo",          null, 0, d.monotributo);
+    det("Vacaciones",           d.vacaciones,              d.valorDia,     d.importeVacaciones);
+    rows.push([["Subtotal adicionales", XST.sub],[null],[null],[d.totalAdicionales, XST.subMoney]]);
+    rows.push([["SUELDO + ADICIONALES", XST.labelB],[null],[null],[d.subtotal, XST.moneyB]]);
+    rows.push([["DESCUENTOS", XST.sub],[null],[null],[null]]);
+    if (d.descDemoras>0)  rows.push([["   Llegadas tarde (fracc. de 15 min)", XST.label],[d.fraccionesDemora, XST.cant],[d.valorHora/4, XST.moneyRed],[d.descDemoras, XST.moneyRed]]);
+    if (d.descSalTemp>0)  rows.push([["   Retiros anticipados (fracc. de 15 min)", XST.label],[d.fraccionesSalTemp, XST.cant],[d.valorHora/4, XST.moneyRed],[d.descSalTemp, XST.moneyRed]]);
+    if (d.descAusencias>0)rows.push([["   Ausencias (días de falta)", XST.label],[d.ausencias, XST.cant],[d.valorDia, XST.moneyRed],[d.descAusencias, XST.moneyRed]]);
+    rows.push([["Total descuentos", XST.sub],[null],[null], d.totalDescuentos>0 ? [d.totalDescuentos, XST.moneyRedB] : ["—", XST.cant]]);
+    const adels = (d.adelantos||[]).filter(a=>parseFloat(a.monto)>0);
+    if (adels.length) {
+      rows.push([["ADELANTOS", XST.sub],[null],[null],[null]]);
+      adels.forEach(a=>rows.push([[`   ${a.desc||"Adelanto"}`, XST.label],[null],[null],[parseFloat(a.monto), XST.money]]));
+      rows.push([["Total adelantos", XST.sub],[null],[null],[d.adelanto, XST.subMoney]]);
+    }
+    rows.push([[`TOTAL A COBRAR — ${d.periodo||""}`, XST.gold],[null, XST.gold],[null, XST.gold],[d.totalACobrar, XST.goldMoney]]);
+    rows.push([]);
+    rows.push([["FORMA DE PAGO", XST.section],[null],[null],[null]]);
+    rows.push([["Transferencia", XST.label],[null],[null], money(reciboA, XST.moneyB)]);
+    rows.push([["Efectivo", XST.labelB],[null],[null],[enMano, enMano<0?XST.moneyRedB:XST.moneyGreen]]);
+    rows.push([]);
+    rows.push([["CÓMO SE CALCULA EL VALOR DE LA HORA", XST.gold],[null],[null],[null]]);
+    rows.push([["1) Valor día = Sueldo bruto / 22", XST.labelB],[null],[null],[d.valorDia, XST.moneyB]]);
+    rows.push([[`2) Valor hora = Valor día / ${divisor} hs de jornada`, XST.hl],[null, XST.hl],[null, XST.hl],[d.valorHora, XST.hlMoney]]);
+    rows.push([["3) Hora extra = Valor hora × 1.5", XST.labelB],[null],[null],[d.valorHoraExt, XST.moneyB]]);
+    rows.push([["Los descuentos por demora/retiro se calculan por fracción de 15 min = Valor hora / 4", XST.note]]);
+
+    const ws = buildStyledSheet(rows, [42, 12, 14, 16]);
+    XLSXS.utils.book_append_sheet(wb, ws, sheetNameSafe(`${emp.empNo} ${nombre}`));
+  }
+
+  XLSXS.writeFile(wb, `liquidaciones_detalle${sufijo||""}.xlsx`);
+}
+
 const DIAS_SEMANA  = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
 const DIAS_CORTO_TBL = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
 const MESES_LARGO  = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"];
@@ -2520,6 +2686,10 @@ function AppMain({ session }) {
                   )}
                 </div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <button onClick={()=>exportCircularesXLSX(activeEmps, getP)}
+                    style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar circulares (Excel)
+                  </button>
                   {circHist.length>0 && (
                     <button onClick={()=>setVerPlanillaHist(v=>!v)}
                       style={{...S.editBtn,display:"flex",alignItems:"center",gap:6,
@@ -3045,6 +3215,28 @@ function AppMain({ session }) {
                     exportXLSX(rows, headers, "Resumen", `resumen_liquidaciones${sufijo}.xlsx`);
                   }} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:14,lineHeight:1}}>↓</span> Exportar Excel
+                  </button>
+                )}
+                {filas.length>0&&(
+                  <button onClick={()=>{
+                    // Detalle completo, una hoja por empleado (misma lógica que el PDF de Liquidación)
+                    const datos = activeEmps.map(emp=>{
+                      const p = getP(emp.empNo);
+                      if (!p.sueldoBasico) return null;
+                      const empCalcs = empSummary.find(s=>s.emp.empNo===emp.empNo)?.calcs || [];
+                      const perMes = resumenMes || liqPeriodoSel;
+                      const stMes  = perMes ? liqStoreRef.current[perMes] : null;
+                      const estsMes = stMes ? Object.values(stMes.estados) : [];
+                      const mesCerrado = estsMes.length > 0 && estsMes.every(e => e === "cerrada");
+                      const snap = mesCerrado ? (stMes.snapshots?.[String(emp.empNo)] || null) : null;
+                      const dCalc = calcularLiquidacion(p, empCalcs, { desde: mesDesde, hasta: mesHasta });
+                      const d = snap ? { ...dCalc, ...snap } : dCalc;
+                      return { emp, p, d };
+                    }).filter(Boolean);
+                    const sufijo = resumenMes ? `_${resumenMes}` : "";
+                    exportLiqDetalleXLSX(datos, sufijo);
+                  }} style={{...S.btnS,display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,lineHeight:1}}>↓</span> Excel por empleado
                   </button>
                 )}
               </div>
